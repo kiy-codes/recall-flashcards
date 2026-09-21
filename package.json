@@ -1,0 +1,46 @@
+{
+  "name": "recall-flashcards",
+  "version": "1.5.2",
+  "description": "A focused, keyboard-first flashcard app for Windows",
+  "main": "main.js",
+  "author": "Recall",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "node --test test-utils.test.js subject-utils.test.js",
+    "dist": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.recall.flashcards",
+    "productName": "Recall Flashcards",
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "test-utils.js",
+      "subject-utils.js",
+      "main.js",
+      "preload.js",
+      "package.json",
+      "exampleText.txt"
+    ],
+    "directories": { "output": "release" },
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "Recall-Flashcards-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Recall Flashcards"
+    }
+  },
+  "devDependencies": {
+    "electron": "^36.4.0",
+    "electron-builder": "^26.0.12"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Recall Flashcards",
+    "slug": "recall-flashcards",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.recall.flashcards",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#2447c2"
+      }
+    },
+    "plugins": [
+      "expo-document-picker",
+      "expo-status-bar",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "replace-with-your-eas-project-id"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# JavaScript dependencies
+node_modules/
+mobile/node_modules/
+
+# Packaged desktop builds
+release/
+release-*/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Expo and Android build artifacts
+mobile/.expo/
+mobile/android/.gradle/
+mobile/android/.kotlin/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/app/.cxx/
+mobile/android/local.properties
+
+# Android signing keys
+*.jks
+*.keystore

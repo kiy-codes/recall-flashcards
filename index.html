@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101b3b" />
+    <title>Recall — Flashcards</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="grain"></div>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#study" aria-label="Recall home">
+          <span class="brand-mark">R</span>
+          <span>Recall</span>
+        </a>
+        <button class="library-trigger" id="libraryTrigger" type="button"><span class="library-icon">☷</span> Library</button>
+        <div class="settings-control"><button class="settings-button" id="settingsBtn" type="button" aria-expanded="false">Settings <span>⚙</span></button><div class="settings-menu" id="settingsMenu" hidden><p class="control-label">Appearance</p><label class="settings-select">Theme<select id="themeSelect"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="control-label">Keyboard shortcuts</p><p class="settings-help">Click a field, then press a key. Arrow keys always work too.</p><label class="keybind-field">Flip card<input id="keybindFlip" readonly /></label><label class="keybind-field">Needs practice<input id="keybindRetry" readonly /></label><label class="keybind-field">Mark correct<input id="keybindCorrect" readonly /></label><label class="keybind-field">Undo<input id="keybindUndo" readonly /></label><button class="settings-reset" id="resetKeybindsBtn" type="button">Reset shortcuts</button></div></div>
+        <div class="deck-summary" aria-live="polite">
+          <span class="pulse"></span>
+          <span id="deckName">My study deck</span>
+          <span class="summary-dot">•</span>
+          <span id="cardCount">0 cards</span>
+        </div>
+        <button class="text-button" id="attemptsTrigger" type="button">Attempts</button>
+        <button class="text-button" id="clearProgressBtn" type="button">Reset progress</button>
+      </header>
+
+      <aside class="library-drawer" id="libraryDrawer" aria-label="Flashcard library" aria-hidden="true">
+        <div class="drawer-head"><div><p class="eyebrow">Your library</p><h2>Study sets</h2></div><div class="drawer-head-actions"><button class="expand-library" id="fullLibraryBtn" type="button" title="Open full library">⛶</button><button class="drawer-close" id="libraryClose" type="button" aria-label="Close library">×</button></div></div>
+        <div class="drawer-actions"><button class="drawer-action" id="newSetBtn" type="button">+ New set</button><button class="drawer-action" id="newFolderBtn" type="button">+ Folder</button></div>
+        <div class="library-tools">
+          <label class="library-search"><span>⌕</span><input id="librarySearch" type="search" placeholder="Filter sets and folders" autocomplete="off" /></label>
+          <label class="library-sort">Sort<select id="librarySort"><option value="manual">Manual order</option><option value="subject">Subject</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="cards-desc">Most cards</option><option value="cards-asc">Fewest cards</option></select></label>
+        </div>
+        <div id="libraryTree" class="library-tree"></div>
+        <p class="drawer-note">Sets and folders are saved on this computer.</p>
+      </aside>
+      <div class="drawer-scrim" id="drawerScrim"></div>
+      <aside class="attempts-drawer" id="attemptsDrawer" aria-label="Deck attempts" aria-hidden="true">
+        <div class="drawer-head"><div><p class="eyebrow">Study history</p><h2>Deck attempts</h2></div><button class="drawer-close" id="attemptsClose" type="button" aria-label="Close attempts">×</button></div>
+        <p class="attempts-subtitle" id="attemptsSubtitle">Sessions for this deck</p>
+        <div class="attempts-list" id="attemptsList"></div>
+      </aside>
+      <div class="drawer-scrim" id="attemptsScrim"></div>
+      <div class="library-dialog-backdrop" id="libraryDialog" hidden>
+        <form class="library-dialog" id="libraryDialogForm">
+          <p class="eyebrow" id="libraryDialogEyebrow">Library</p>
+          <h3 id="libraryDialogTitle">Create a study set</h3>
+          <label id="libraryDialogLabel">Name<input id="libraryDialogInput" type="text" maxlength="70" required /></label>
+          <div class="library-dialog-actions"><button class="dialog-cancel" id="libraryDialogCancel" type="button">Cancel</button><button class="primary-button" id="libraryDialogSave" type="button">Save</button></div>
+        </form>
+      </div>
+
+      <section class="hero" id="study">
+        <div class="hero-copy">
+          <p class="eyebrow">Focused practice</p>
+          <h1>Make recall<br />feel <em>natural.</em></h1>
+          <p class="intro">Flip, decide, repeat. Your cards are saved on this computer, ready for the next small study session.</p>
+        </div>
+        <div class="session-panel">
+          <div class="session-heading">
+            <span>Session progress</span>
+            <strong id="progressText">0 / 0</strong>
+          </div>
+          <div class="progress-track"><span id="progressBar"></span></div>
+          <div class="score-row">
+            <div><span class="score-dot correct-dot"></span><strong id="correctCount">0</strong> correct</div>
+            <div><span class="score-dot retry-dot"></span><strong id="retryCount">0</strong> to revisit</div>
+          </div>
+          <div class="session-score"><span>Session score</span><strong id="sessionScore">—</strong></div>
+          <div class="streak-row"><span>Study streak</span><strong id="currentStreak">0 days</strong><small id="longestStreak">Best: 0</small></div>
+        </div>
+      </section>
+
+      <section class="study-area" aria-label="Study flashcards">
+        <aside class="study-controls">
+          <div class="control-group">
+            <p class="control-label">Show first</p>
+            <div class="segmented" role="group" aria-label="Choose starting side">
+              <button class="segment active" id="frontSegment" data-side="front" type="button">First side</button>
+              <button class="segment" id="backSegment" data-side="back" type="button">Second side</button>
+            </div>
+          </div>
+          <div class="control-group session-options">
+            <div class="label-line">
+              <p class="control-label">This session</p>
+              <button class="session-menu-button" id="sessionMenuBtn" type="button" aria-expanded="false">Options <span>⌄</span></button>
+            </div>
+            <p class="help-text">Choose how this run behaves.</p>
+            <div class="session-menu" id="sessionMenu" hidden>
+              <label class="session-select">Study cards<select id="studyFilter"><option value="all">All cards</option><option value="flagged">Flagged cards</option><option value="missed">Missed cards</option><option value="new">New cards</option><option value="learning">Learning cards</option></select></label>
+              <label class="session-select">Answer mode<select id="studyMode"><option value="flip">Flip cards</option><option value="typed">Type an answer</option></select></label>
+              <label class="session-option"><span><b>Shuffle cards</b><small>Mix the order for this run.</small></span><input id="sessionShuffle" type="checkbox" checked /></label>
+              <label class="session-option"><span><b>Repeat missed cards</b><small>Show each missed card once more at the end.</small></span><input id="repeatMissed" type="checkbox" /></label>
+              <button class="session-start" id="applySessionBtn" type="button">Start this session</button>
+            </div>
+          </div>
+          <div class="control-group focus-control">
+            <p class="control-label">Distraction-free study</p>
+            <button class="focus-button" id="fullscreenBtn" type="button"><span>⛶</span> Fullscreen <kbd>F</kbd></button>
+          </div>
+          <div class="key-guide" aria-label="Keyboard shortcuts">
+            <p class="control-label">Shortcuts</p>
+            <div><kbd>↑</kbd><kbd>↓</kbd><span>Flip card</span></div>
+            <div><kbd>←</kbd><span>Need practice</span></div>
+            <div><kbd>→</kbd><span>Got it</span></div>
+            <div><kbd>Z</kbd><span>Undo last answer</span></div>
+          </div>
+        </aside>
+
+        <div class="card-stage">
+          <button class="exit-focus" id="exitFocusBtn" type="button">Exit fullscreen <kbd>Esc</kbd></button>
+          <p class="card-position" id="cardPosition">ADD CARDS TO BEGIN</p>
+          <article class="flashcard empty" id="flashcard" tabindex="0" role="button" aria-label="Flip flashcard">
+            <span class="card-accent"></span>
+            <span class="card-inner">
+              <span class="card-meta" id="cardSideLabel">YOUR DECK</span>
+              <span class="card-content" id="cardContent">Add a card below, or paste in a list to make a deck in seconds.</span>
+              <span class="flip-hint"><span class="flip-icon">↕</span> Tap or use ↑ ↓ to flip</span>
+            </span>
+            <div class="card-tools"><span class="card-state" id="cardState">NEW</span><button class="flag-button" id="flagBtn" type="button" disabled>☆ Flag</button></div>
+          </article>
+          <div class="study-hint" id="studyHint" hidden><button id="revealHintBtn" type="button">Show hint</button><p id="hintText"></p></div>
+          <form class="typed-answer" id="typedAnswerForm" hidden>
+            <label id="typedPrompt">Type the answer</label>
+            <div><input id="typedAnswerInput" type="text" autocomplete="off" placeholder="Type your answer" /><button class="primary-button" id="typedSubmitBtn" type="submit">Check</button></div>
+            <p class="typed-feedback" id="typedFeedback" aria-live="polite"></p>
+          </form>
+          <div class="review-actions">
+            <button class="review-button retry" id="retryBtn" type="button" disabled>
+              <span class="arrow">←</span><span><small>NOT YET</small>Practice again</span>
+            </button>
+            <button class="review-button correct" id="correctBtn" type="button" disabled>
+              <span><small>GOT IT</small>Mark correct</span><span class="arrow">→</span>
+            </button>
+            <button class="undo-button" id="undoBtn" type="button" disabled><span>↶</span> Undo last answer <kbd>Z</kbd></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace" id="create">
+        <div class="workspace-heading">
+          <div>
+            <p class="eyebrow">Build your deck</p>
+            <h2>Add cards your way.</h2>
+          </div>
+          <p>Add one card at a time, or bring in a whole vocabulary list.</p>
+        </div>
+        <div class="creator-grid">
+          <form class="panel add-panel" id="addCardForm">
+            <div class="panel-title"><span class="panel-number">01</span><h3>Create a card</h3></div>
+            <div class="side-label-editor">
+              <label>First side name<input id="frontLabelInput" type="text" placeholder="e.g. Term" maxlength="40" /></label>
+              <label>Second side name<input id="backLabelInput" type="text" placeholder="e.g. Definition" maxlength="40" /></label>
+              <button class="label-save" id="saveLabelsBtn" type="button">Save names</button>
+            </div>
+            <label><span id="frontInputLabel">First side</span><input id="frontInput" type="text" placeholder="e.g. photosynthesis" required maxlength="700" /></label>
+            <label><span id="backInputLabel">Second side</span><input id="backInput" type="text" placeholder="e.g. process plants use to make food" required maxlength="700" /></label>
+            <label>Tags <input id="tagsInput" type="text" placeholder="e.g. biology, exam" maxlength="300" /></label>
+            <label>Hint <input id="hintInput" type="text" placeholder="Optional clue shown while studying" maxlength="700" /></label>
+            <label>Notes <textarea id="notesInput" placeholder="Optional notes, context, or examples" maxlength="2000"></textarea></label>
+            <button class="primary-button" type="submit"><span>+</span> Add flashcard</button>
+          </form>
+
+          <section class="panel import-panel" aria-labelledby="importHeading">
+            <div class="panel-title"><span class="panel-number">02</span><h3 id="importHeading">Paste a list</h3></div>
+            <p class="panel-description">One pair per line works best. The importer recognises tabs, dashes, colons, pipes, arrows, and wrapped answers.</p>
+            <textarea id="importInput" placeholder="Haus - house&#10;Baum - tree&#10;Wasser - water"></textarea>
+            <div class="import-footer">
+              <label class="select-label">Format
+                <select id="importFormat">
+                  <option value="auto">Auto-detect separators</option>
+                  <option value="dash">Dash — (term — answer)</option>
+                  <option value="hyphen">Hyphen - (term - answer)</option>
+                  <option value="tab">Tab (term [tab] answer)</option>
+                  <option value="colon">Colon : (term: answer)</option>
+                  <option value="pipe">Pipe | (term | answer)</option>
+                  <option value="arrow">Arrow → (term → answer)</option>
+                  <option value="lines">Two lines = one card</option>
+                </select>
+              </label>
+              <button class="primary-button" id="importBtn" type="button">Import list <span>→</span></button>
+            </div>
+            <p class="import-status" id="importStatus" aria-live="polite"></p>
+            <label class="file-import">Import CSV, TSV, or a Recall share file<input id="fileImportInput" type="file" accept=".csv,.tsv,.txt,.recall,.json" /></label>
+          </section>
+        </div>
+      </section>
+
+      <section class="deck-section" id="deck">
+        <div class="deck-heading">
+          <div><p class="eyebrow">Your collection</p><h2>Deck cards</h2></div>
+          <div class="deck-heading-actions"><button class="text-button" id="exportDeckBtn" type="button">Export CSV</button><button class="text-button" id="exportTsvBtn" type="button">Export TSV</button><details class="share-picker"><summary>Share decks <span id="shareDeckSummary">Choose decks</span></summary><div class="share-picker-options" id="shareDeckOptions"></div></details><button class="text-button" id="shareDecksBtn" type="button">Export share file</button><button class="danger-button" id="clearDeckBtn" type="button" disabled>Clear deck</button></div>
+        </div>
+        <div class="card-management">
+          <div class="card-management-main"><label class="deck-search"><span>⌕</span><input id="deckSearch" type="search" placeholder="Search cards, notes, hints, or tags" autocomplete="off" /></label><button class="text-button" id="clearSearchBtn" type="button">Clear search</button><details class="tag-picker"><summary>Tags <span id="tagFilterSummary">All tags</span></summary><div class="tag-picker-options" id="tagFilterOptions"></div></details><button class="text-button" id="manageTagsBtn" type="button">Manage tags</button></div>
+          <div class="card-management-selection"><button class="text-button" id="selectCardsBtn" type="button">Select cards</button><strong id="selectionCount">0 selected</strong></div>
+          <div class="bulk-actions" id="bulkActions" hidden><button class="text-button" id="bulkTagBtn" type="button">Add tag</button><button class="text-button" id="bulkRemoveTagBtn" type="button">Remove tag</button><label>Move to<select id="bulkMoveDeck"></select></label><button class="text-button" id="bulkDuplicateBtn" type="button">Duplicate</button><button class="danger-button" id="bulkDeleteBtn" type="button">Delete selected</button></div>
+        </div>
+        <div id="deckList" class="deck-list" aria-live="polite"></div>
+        <div id="emptyDeck" class="empty-deck">
+          <span class="empty-symbol">✦</span>
+          <p>Your deck is waiting for its first card.</p>
+        </div>
+      </section>
+
+      <section class="insights-section" aria-labelledby="insightsHeading">
+        <div class="insights-heading"><div><p class="eyebrow">Your momentum</p><h2 id="insightsHeading">Session accuracy</h2></div><p>Accuracy for every study session, across all sets.</p></div>
+        <div class="chart-panel">
+          <div class="chart-stat"><strong id="bestAccuracy">—</strong><span>best session</span><p id="accuracyChange">Start a session to see your change.</p></div>
+          <div class="chart-wrap"><svg id="progressChart" viewBox="0 0 560 180" role="img" aria-label="Session accuracy graph"></svg><p class="chart-empty" id="chartEmpty">Your session history will appear here as you study.</p></div>
+        </div>
+      </section>
+      <section class="heatmap-section" aria-labelledby="heatmapHeading">
+        <div class="insights-heading"><div><p class="eyebrow">Study activity</p><h2 id="heatmapHeading">Your study calendar</h2></div><p>Each square shows how many cards you reviewed that day.</p></div>
+        <div class="heatmap-panel"><div class="heatmap-months" id="heatmapMonths"></div><div class="heatmap-grid" id="heatmapGrid" aria-label="Study activity heatmap"></div><p class="heatmap-tip" id="heatmapTip">Hover a day to see its study details.</p></div>
+      </section>
+    </main>
+    <section class="full-library" id="fullLibrary" hidden aria-label="Full library">
+      <header class="full-library-head"><div><p class="eyebrow">Your collection</p><h1>All study sets.</h1></div><button class="drawer-close" id="fullLibraryClose" type="button">×</button></header>
+      <div class="full-library-tools"><label class="library-search"><span>⌕</span><input id="fullLibrarySearch" type="search" placeholder="Filter sets and folders" autocomplete="off" /></label><label class="library-sort">Sort<select id="fullLibrarySort"><option value="manual">Manual order</option><option value="subject">Subject</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="cards-desc">Most cards</option><option value="cards-asc">Fewest cards</option></select></label><button class="drawer-action" id="fullNewSetBtn" type="button">+ New set</button><button class="drawer-action" id="fullNewFolderBtn" type="button">+ Folder</button></div>
+      <div class="full-library-grid" id="fullLibraryGrid"></div>
+    </section>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="library-dialog-backdrop" id="cardEditorDialog" hidden><form class="library-dialog card-editor" id="cardEditorForm"><p class="eyebrow">Edit card</p><h3>Card details</h3><label>First side<input id="editFrontInput" required maxlength="700" /></label><label>Second side<input id="editBackInput" required maxlength="700" /></label><label>Tags<input id="editTagsInput" maxlength="300" /></label><label>Hint<input id="editHintInput" maxlength="700" /></label><label>Notes<textarea id="editNotesInput" maxlength="2000"></textarea></label><div class="library-dialog-actions"><button class="dialog-cancel" id="cardEditorCancel" type="button">Cancel</button><button class="primary-button" type="submit">Save card</button></div></form></div>
+    <div class="library-dialog-backdrop" id="tagDialog" hidden><section class="library-dialog tag-dialog"><p class="eyebrow">Card tags</p><h3>Manage tags</h3><div id="tagManagerList" class="tag-manager-list"></div><button class="primary-button" id="newTagBtn" type="button">+ Create tag</button><div class="library-dialog-actions"><button class="dialog-cancel" id="tagDialogClose" type="button">Done</button></div></section></div>
+    <div class="library-dialog-backdrop" id="importPreviewDialog" hidden><section class="import-preview"><header><div><p class="eyebrow">Safe import</p><h3>Review your import</h3></div><button class="drawer-close" id="importPreviewClose" type="button">×</button></header><div class="import-map"><label>First side<select id="mapFront"></select></label><label>Second side<select id="mapBack"></select></label><label>Tags<select id="mapTags"></select></label><label>Notes<select id="mapNotes"></select></label><label>Hint<select id="mapHint"></select></label><label>Destination<select id="importDestination"></select></label><label id="shareImportModeWrap" hidden>Sharing<select id="shareImportMode"><option value="merge">Merge deck names</option><option value="copy">Create deck copies</option><option value="skip">Skip matching decks</option></select></label><label>Duplicates<select id="duplicateMode"><option value="skip">Skip duplicates</option><option value="keep">Keep duplicates</option><option value="replace">Replace existing cards</option></select></label></div><p id="importPreviewSummary" class="import-preview-summary"></p><div id="importPreviewRows" class="import-preview-rows"></div><footer><button class="dialog-cancel" id="importPreviewCancel" type="button">Cancel</button><button class="primary-button" id="confirmImportBtn" type="button">Import reviewed rows</button></footer></section></div>
+    <script src="test-utils.js"></script>
+    <script src="subject-utils.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
