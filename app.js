@@ -17,6 +17,7 @@ const state = {
   reviewLog: [],
   testHistory: [],
   activeTest: null,
+  pendingTestCardIds: null,
   currentSession: null,
   repeatMissed: false,
   sessionRepeatedIds: new Set(),
@@ -86,7 +87,7 @@ function load() {
       state.sessionHistory = Array.isArray(saved.sessionHistory) ? saved.sessionHistory.filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? saved.performance.filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
       state.testHistory = Array.isArray(saved.testHistory) ? saved.testHistory.filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
       state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry'].includes(item.outcome)) : [];
-      state.currentSession = saved.currentSession?.attempts ? { learned: 0, ...saved.currentSession } : null;
+      state.currentSession = saved.currentSession?.attempts ? { learned: 0, missedCardIds: [], ...saved.currentSession, missedCardIds: Array.isArray(saved.currentSession.missedCardIds) ? saved.currentSession.missedCardIds : [] } : null;
       state.activity = saved.activity && typeof saved.activity === 'object' ? saved.activity : {};
       state.repeatMissed = Boolean(saved.repeatMissed); state.studyFilter = ['all', 'due', 'flagged', 'missed', 'new', 'learning'].includes(saved.studyFilter) ? saved.studyFilter : 'all'; state.studyMode = saved.studyMode === 'typed' ? 'typed' : 'flip';
       state.theme = ['system', 'light', 'dark'].includes(saved.theme) ? saved.theme : 'system'; state.keybinds = { ...state.keybinds, ...(saved.keybinds || {}) };
@@ -115,7 +116,7 @@ function shuffledCopy(cards) {
 
 function startNewSession() {
   const set = activeSet();
-  state.currentSession = { id: makeId(), deckId: set?.id || null, deckName: set?.name || 'Study set', startedAt: new Date().toISOString(), attempts: 0, correct: 0, retry: 0, learned: 0, filter: state.studyFilter, mode: state.studyMode };
+  state.currentSession = { id: makeId(), deckId: set?.id || null, deckName: set?.name || 'Study set', startedAt: new Date().toISOString(), attempts: 0, correct: 0, retry: 0, learned: 0, missedCardIds: [], filter: state.studyFilter, mode: state.studyMode };
 }
 
 function finishCurrentSession() {
@@ -139,10 +140,21 @@ function cardsForStudy() {
 
 function buildQueue() {
   finishCurrentSession();
+  state.testStudyContext = null;
   const eligible = cardsForStudy();
   state.queue = state.shuffled ? shuffledCopy(eligible) : [...eligible];
   state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
   startNewSession();
+  render();
+}
+
+function resetStudyRun(cards, filter = state.studyFilter) {
+  finishCurrentSession();
+  state.testStudyContext = null;
+  state.queue = state.shuffled ? shuffledCopy(cards) : [...cards];
+  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
+  startNewSession();
+  state.currentSession.filter = filter;
   render();
 }
 
@@ -280,6 +292,12 @@ function updateTestTimer() {
 function openTestSetup() {
   clearInterval(testTimer); state.activeTest = null; state.testReviewFilter = 'all'; state.testReviewSearch = ''; testMode.hidden = false;
   testMode.innerHTML = `<div class="test-shell"><header class="test-head"><div><p class="eyebrow">Assessment</p><h1>Build a test.</h1><p>Tests are scored separately and never change your card learning states.</p></div><div class="test-head-actions"><button class="text-button" data-test-action="history" type="button">Test history</button><button class="drawer-close" data-test-action="close" type="button" aria-label="Close test mode">×</button></div></header><div class="test-setup-grid"><section class="test-panel"><h2>Choose material</h2><div class="test-choice-group"><h3>Decks</h3><div class="test-check-list">${testDeckChoices()}</div></div><div class="test-choice-group"><h3>Folders</h3><div class="test-check-list">${testFolderChoices()}</div></div><div class="test-choice-group"><h3>Tags <small>optional</small></h3><div class="test-tags">${testTagChoices()}</div></div></section><section class="test-panel"><h2>Test rules</h2><label class="test-field">Questions<input id="testQuestionCount" type="number" min="1" value="10" /></label><label class="test-field">Include cards<select id="testCardFilter"><option value="all">All cards</option><option value="new">New cards</option><option value="learning">Learning cards</option><option value="mastered">Mastered cards</option><option value="missed">Missed cards</option><option value="flagged">Flagged cards</option></select></label><label class="test-field">Answer style<select id="testAnswerStyle"><option value="typed">Typed answer only</option><option value="choice">Multiple choice only</option><option value="mixed">Mixed mode</option></select></label><label class="test-field">Show first<select id="testPromptSide"><option value="front">First side</option><option value="back">Second side</option></select></label><label class="test-toggle"><span><b>Timed countdown</b><small>Finish before the limit expires.</small></span><input id="testTimed" type="checkbox" checked /></label><label class="test-field test-limit-field">Time limit<select id="testTimeLimit"><option value="300">5 minutes</option><option value="600" selected>10 minutes</option><option value="900">15 minutes</option><option value="1200">20 minutes</option><option value="1800">30 minutes</option><option value="0">No limit — track elapsed</option></select></label><p class="test-pool-note" id="testPoolNote"></p><button class="primary-button test-start" data-test-action="start" type="button">Start test <span>→</span></button></section></div></div>`;
+  if (state.pendingTestCardIds?.length) {
+    const count = $('#testQuestionCount');
+    if (count) { count.value = state.pendingTestCardIds.length; count.max = state.pendingTestCardIds.length; }
+    const note = $('#testPoolNote');
+    if (note) note.dataset.subset = 'missed-cards';
+  }
   refreshTestPoolNote();
 }
 function testSetupConfig() { const base = (() => { const deckIds = [...testMode.querySelectorAll('[data-test-deck]:checked')].map(input => input.value); const folderIds = [...testMode.querySelectorAll('[data-test-folder]:checked')].map(input => input.value); state.sets.filter(set => folderIds.includes(set.folderId)).forEach(set => deckIds.push(set.id)); return { deckIds: [...new Set(deckIds)], folderIds, tags: [...testMode.querySelectorAll('[data-test-tag]:checked')].map(input => input.value), count: Number($('#testQuestionCount')?.value) || 0, filter: $('#testCardFilter')?.value || 'all', style: $('#testAnswerStyle')?.value || 'typed', promptSide: $('#testPromptSide')?.value || 'front', timed: Boolean($('#testTimed')?.checked), timeLimitSeconds: Number($('#testTimeLimit')?.value) || 0 }; })(); return base; }
@@ -323,7 +341,7 @@ testMode.addEventListener('click', event => { const action = event.target.closes
 testMode.addEventListener('change', event => { const field = event.target.dataset.testHistoryFilter; if (field) { state.testHistoryFilters[field] = event.target.value; renderTestHistory(); } });
 testMode.addEventListener('input', event => { if (event.target.id === 'testReviewSearch') { state.testReviewSearch = event.target.value; const test = testResultById(state.openTestResultId); if (test) renderTestResults(test); } });
 testMode.addEventListener('click', event => { const filter = event.target.dataset.testReviewFilter; if (filter) { state.testReviewFilter = filter; const test = testResultById(state.openTestResultId); if (test) renderTestResults(test); } });
-document.addEventListener('keydown', event => { const test = state.activeTest; if (!test) return; const key = event.key; if (key === 'Escape') { event.preventDefault(); if (confirm('Exit this test? Your unfinished answers will be lost.')) { clearInterval(testTimer); state.activeTest = null; testMode.hidden = true; } return; } if (key === 'Enter') { if (test.feedback) { event.preventDefault(); nextTestQuestion(); } return; } if (activeTestQuestion()?.answerType === 'choice' && /^[1-4]$/.test(key) && !test.feedback) { event.preventDefault(); const choice = activeTestQuestion().choices?.[Number(key) - 1]; if (choice) submitTestAnswer(choice); } });
+document.addEventListener('keydown', event => { if (event.repeat) return; const test = state.activeTest; if (!test) return; const key = event.key; if (key === 'Escape') { event.preventDefault(); if (confirm('Exit this test? Your unfinished answers will be lost.')) { clearInterval(testTimer); state.activeTest = null; testMode.hidden = true; } return; } if (key === 'Enter') { if (test.feedback) { event.preventDefault(); nextTestQuestion(); } return; } if (activeTestQuestion()?.answerType === 'choice' && /^[1-4]$/.test(key) && !test.feedback) { event.preventDefault(); const choice = activeTestQuestion().choices?.[Number(key) - 1]; if (choice) submitTestAnswer(choice); } });
 window.addEventListener('beforeunload', event => { if (state.activeTest) { event.preventDefault(); event.returnValue = ''; } });
 });
 
@@ -428,6 +446,72 @@ function undoActivity(activity) {
 function normaliseAnswer(value) { return String(value).replace(/\([^)]*\)/g, ' ').toLocaleLowerCase().trim().replace(/[\p{P}\p{S}_]+/gu, ' ').replace(/\s+/g, ' ').trim(); }
 function answersMatch(actual, expected) { return normaliseAnswer(actual) === normaliseAnswer(expected); }
 
+const completionDialog = document.createElement('div');
+completionDialog.id = 'completionDialog';
+completionDialog.className = 'completion-dialog-backdrop';
+completionDialog.hidden = true;
+document.body.append(completionDialog);
+
+function currentSessionMissedCards() {
+  const ids = new Set(state.currentSession?.missedCardIds || []);
+  return activeCards().filter(card => ids.has(card.id));
+}
+
+function closeCompletionDialog() {
+  completionDialog.hidden = true;
+}
+
+function openCompletionDialog() {
+  const summary = RecallCompletion.summariseSession(state.currentSession);
+  if (!summary.reviewed || completionDialog.hidden === false) return;
+  const missed = currentSessionMissedCards();
+  completionDialog.innerHTML = `<section class="completion-dialog" role="dialog" aria-modal="true" aria-labelledby="completionTitle" aria-describedby="completionSummary"><button class="completion-close" data-completion-action="close" type="button" aria-label="Close session summary">×</button><p class="eyebrow">Session complete</p><h2 id="completionTitle">Nice work.</h2><p id="completionSummary">You finished this study queue.</p><dl class="completion-stats"><div><dt>Reviewed</dt><dd>${summary.reviewed}</dd></div><div><dt>Correct</dt><dd>${summary.correct}</dd></div><div><dt>To revisit</dt><dd>${summary.retry}</dd></div><div><dt>Accuracy</dt><dd>${summary.accuracy}%</dd></div></dl><div class="completion-actions"><button class="primary-button" data-completion-action="restart" type="button">Restart deck</button>${missed.length ? `<button class="text-button completion-action" data-completion-action="practice" type="button">Practice missed cards <span>${missed.length}</span></button><button class="text-button completion-action" data-completion-action="test" type="button">Test missed cards <span>${missed.length}</span></button>` : ''}<button class="dialog-cancel" data-completion-action="close" type="button">Close</button></div></section>`;
+  completionDialog.hidden = false;
+  setTimeout(() => completionDialog.querySelector('[data-completion-action="restart"]')?.focus(), 0);
+}
+
+function restartCompletedDeck() {
+  closeCompletionDialog();
+  buildQueue();
+  showToast('Deck restarted with the same session settings.');
+}
+
+function practiceSessionMisses() {
+  const cards = currentSessionMissedCards();
+  if (!cards.length) return;
+  closeCompletionDialog();
+  resetStudyRun(cards, 'session-missed');
+  showToast(`Practice session started with ${cards.length} missed card${cards.length === 1 ? '' : 's'}.`);
+}
+
+function testSessionMisses() {
+  const cards = currentSessionMissedCards();
+  if (!cards.length) return;
+  finishCurrentSession();
+  closeCompletionDialog();
+  state.pendingTestCardIds = cards.map(card => card.id);
+  openTestSetup();
+  prepareSubsetTestSetup();
+  showToast(`Test setup is using ${cards.length} missed card${cards.length === 1 ? '' : 's'}.`);
+}
+
+function prepareSubsetTestSetup() {
+  const count = $('#testQuestionCount');
+  if (!count || !state.pendingTestCardIds?.length) return;
+  count.value = state.pendingTestCardIds.length;
+  count.max = state.pendingTestCardIds.length;
+  refreshTestPoolNote();
+}
+
+completionDialog.addEventListener('click', event => {
+  if (event.target === completionDialog) return closeCompletionDialog();
+  const action = event.target.closest('[data-completion-action]')?.dataset.completionAction;
+  if (action === 'restart') restartCompletedDeck();
+  if (action === 'practice') practiceSessionMisses();
+  if (action === 'test') testSessionMisses();
+  if (action === 'close') closeCompletionDialog();
+});
+
 function review(result) {
   if (!currentCard() || state.animating) return;
   const answeredCard = currentCard();
@@ -442,12 +526,14 @@ function review(result) {
     let repeatIndex = null;
     if (result === 'retry' && state.repeatMissed && !state.sessionRepeatedIds.has(answeredCard.id)) { repeatIndex = state.queue.length; state.queue.push(answeredCard); state.sessionRepeatedIds.add(answeredCard.id); }
     const transition = applyCardReview(answeredCard, result); const activity = recordActivity(answeredCard, transition.learned);
-    state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, schedulingBefore, activity, reviewLogId: reviewEvent.id });
     if (!state.currentSession) startNewSession();
+    const missedAdded = result === 'retry' && !state.currentSession.missedCardIds.includes(answeredCard.id);
+    if (missedAdded) state.currentSession.missedCardIds.push(answeredCard.id);
+    state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, schedulingBefore, activity, reviewLogId: reviewEvent.id, missedAdded });
     state.currentSession.attempts += 1;
     if (result === 'correct') state.currentSession.correct += 1; else state.currentSession.retry += 1;
     if (transition.learned) state.currentSession.learned += 1;
-    if (result === 'correct') state.correct++; else state.retry++; state.currentIndex++; state.cardPresentedAt = Date.now(); state.flipped = false; state.typedChecked = false; state.hintRevealed = false; elements.typedInput.value = ''; state.animating = false; save(); render();
+    if (result === 'correct') state.correct++; else state.retry++; state.currentIndex++; const completedQueue = state.currentIndex >= state.queue.length; state.cardPresentedAt = Date.now(); state.flipped = false; state.typedChecked = false; state.hintRevealed = false; elements.typedInput.value = ''; state.animating = false; save(); render(); if (completedQueue) openCompletionDialog();
   }, 250);
 }
 
@@ -458,7 +544,7 @@ function undoReview() {
   if (last.repeatIndex !== null) { state.queue.splice(last.repeatIndex, 1); state.sessionRepeatedIds.delete(last.cardId); }
   if (last.result === 'correct') state.correct = Math.max(0, state.correct - 1); else state.retry = Math.max(0, state.retry - 1);
   if (state.currentSession) { state.currentSession.attempts = Math.max(0, state.currentSession.attempts - 1); if (last.result === 'correct') state.currentSession.correct = Math.max(0, state.currentSession.correct - 1); else state.currentSession.retry = Math.max(0, state.currentSession.retry - 1); }
-  const card = state.sets.flatMap(set => set.cards).find(item => item.id === last.cardId); if (card && last.cardBefore) Object.assign(card, last.cardBefore); if (card && last.schedulingBefore) Object.assign(card, last.schedulingBefore); if (last.reviewLogId) state.reviewLog = state.reviewLog.filter(event => event.id !== last.reviewLogId); undoActivity(last.activity); if (last.activity?.learned && state.currentSession) state.currentSession.learned = Math.max(0, state.currentSession.learned - 1);
+  const card = state.sets.flatMap(set => set.cards).find(item => item.id === last.cardId); if (card && last.cardBefore) Object.assign(card, last.cardBefore); if (card && last.schedulingBefore) Object.assign(card, last.schedulingBefore); if (last.reviewLogId) state.reviewLog = state.reviewLog.filter(event => event.id !== last.reviewLogId); if (last.missedAdded && state.currentSession) state.currentSession.missedCardIds = state.currentSession.missedCardIds.filter(id => id !== last.cardId); undoActivity(last.activity); if (last.activity?.learned && state.currentSession) state.currentSession.learned = Math.max(0, state.currentSession.learned - 1);
   state.flipped = false; state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now(); save(); render(); showToast('Last answer undone.');
 }
 
@@ -724,9 +810,9 @@ elements.dialogSave.addEventListener('click', saveLibraryDialog);
 elements.dialogForm.addEventListener('submit', event => { event.preventDefault(); saveLibraryDialog(); });
 
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) document.body.classList.remove('focus-study'); });
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && !elements.dialog.hidden) { closeLibraryDialog(); return; } if (event.key === 'Escape' && !elements.cardEditor.hidden) { closeCardEditor(); return; } if (event.key === 'Escape' && !elements.tagDialog.hidden) { closeTagManager(); return; } if (event.key === 'Escape' && !elements.importPreview.hidden) { closeImportPreview(); return; } if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; if (event.key === 'Escape') { closeLibrary(); closeSessionMenu(); if (document.body.classList.contains('focus-study')) exitFocus(); } if (event.key.toLowerCase() === 'z') { event.preventDefault(); undoReview(); } if (event.key.toLowerCase() === 'f') { event.preventDefault(); document.body.classList.contains('focus-study') ? exitFocus() : enterFocus(); } if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); flip(); } if (state.studyMode !== 'typed' && event.key === 'ArrowLeft') { event.preventDefault(); review('retry'); } if (state.studyMode !== 'typed' && event.key === 'ArrowRight') { event.preventDefault(); review('correct'); } });
+document.addEventListener('keydown', event => { if (event.repeat) return; if (event.key === 'Escape' && !completionDialog.hidden) { event.preventDefault(); closeCompletionDialog(); return; } if (event.key === 'Escape' && !elements.dialog.hidden) { closeLibraryDialog(); return; } if (event.key === 'Escape' && !elements.cardEditor.hidden) { closeCardEditor(); return; } if (event.key === 'Escape' && !elements.tagDialog.hidden) { closeTagManager(); return; } if (event.key === 'Escape' && !elements.importPreview.hidden) { closeImportPreview(); return; } if (state.activeTest || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; if (event.key === 'Escape') { closeLibrary(); closeSessionMenu(); if (document.body.classList.contains('focus-study')) exitFocus(); return; } if (event.key.toLowerCase() === 'f') { event.preventDefault(); document.body.classList.contains('focus-study') ? exitFocus() : enterFocus(); return; } if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); flip(); return; } if (state.studyMode !== 'typed' && event.key === 'ArrowLeft') { event.preventDefault(); review('retry'); return; } if (state.studyMode !== 'typed' && event.key === 'ArrowRight') { event.preventDefault(); review('correct'); } });
 
-document.addEventListener('keydown', event => { if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; const key = event.key.toLowerCase(); if (key === state.keybinds.undo) { event.preventDefault(); undoReview(); } if (key === 'w' || key === 's' || key === state.keybinds.flip) { event.preventDefault(); flip(); } if (state.studyMode !== 'typed' && (key === 'a' || key === state.keybinds.retry)) { event.preventDefault(); review('retry'); } if (state.studyMode !== 'typed' && (key === 'd' || key === state.keybinds.correct)) { event.preventDefault(); review('correct'); } });
+document.addEventListener('keydown', event => { if (event.defaultPrevented || event.repeat || state.activeTest || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; const key = event.key.toLowerCase(); if (key === state.keybinds.undo) { event.preventDefault(); undoReview(); return; } if (key === 'w' || key === 's' || key === state.keybinds.flip) { event.preventDefault(); flip(); return; } if (state.studyMode !== 'typed' && (key === 'a' || key === state.keybinds.retry)) { event.preventDefault(); review('retry'); return; } if (state.studyMode !== 'typed' && (key === 'd' || key === state.keybinds.correct)) { event.preventDefault(); review('correct'); } });
 load();
 migrateTestHistory();
 
@@ -764,7 +850,9 @@ function testSetupConfig() {
 }
 function cardsForTest(config) {
   const deckIds = config.deckIds.length ? config.deckIds : [activeSet()?.id];
+  const subset = state.pendingTestCardIds ? new Set(state.pendingTestCardIds) : null;
   return state.sets.filter(set => deckIds.includes(set.id)).flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, frontLabel: sideNames(set).front, backLabel: sideNames(set).back }))).filter(card => {
+    if (subset && !subset.has(card.id)) return false;
     const matchesTags = !config.tags.length || config.tags.every(tag => card.tags.includes(tag));
     const matchesFilter = config.filter === 'all' || (config.filter === 'new' && card.state === 'New') || (config.filter === 'learning' && card.state === 'Learning') || (config.filter === 'mastered' && card.state === 'Mastered') || (config.filter === 'missed' && card.missed) || (config.filter === 'flagged' && card.flagged);
     return matchesTags && matchesFilter;
@@ -867,7 +955,7 @@ deckSubjectButton.addEventListener('click', openDeckSubjectDialog); subjectColou
 subjectDialog.addEventListener('click', event => { const action = event.target.dataset.subjectAction; if (action === 'cancel') subjectDialog.hidden = true; if (action === 'save-primary') { activeSet().primarySubject = $('#primarySubjectSelect').value || null; subjectDialog.hidden = true; save(); render(); showToast('Deck subject details saved.'); } if (event.target === subjectDialog) subjectDialog.hidden = true; });
 subjectColoursDialog.addEventListener('click', event => { const button = event.target.closest('[data-subject-colour]'); if (button) applySubjectColour(button.dataset.subjectColour, button.dataset.colour); if (event.target.dataset.subjectColourAction === 'close' || event.target === subjectColoursDialog) subjectColoursDialog.hidden = true; });
 subjectColoursDialog.addEventListener('input', event => { if (event.target.dataset.subjectColourInput) applySubjectColour(event.target.dataset.subjectColourInput, event.target.value); });
-testModeButton.addEventListener('click', openTestSetup);
+testModeButton.addEventListener('click', () => { state.pendingTestCardIds = null; openTestSetup(); });
 testMode.addEventListener('input', event => { if (event.target.matches('[data-test-deck], [data-test-folder], [data-test-tag], #testQuestionCount, #testCardFilter')) refreshTestPoolNote(); });
 testMode.addEventListener('click', event => { const action = event.target.closest('[data-test-action]')?.dataset.testAction; if (event.target.matches('[data-test-choice]')) { const question = activeTestQuestion(); submitTestAnswer(question.choices[Number(event.target.dataset.testChoice)]); return; } if (action === 'start') startTest(); if (action === 'skip') skipTestQuestion(); if (action === 'next') nextTestQuestion(); if (action === 'exit') { if (confirm('Exit this test? Your unfinished answers will be lost.')) closeTestMode(); } if (action === 'close') closeTestMode(); if (action === 'retry-missed') retryMissedTest(); if (action === 'study-missed') studyMissedTest(); });
 

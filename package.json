@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js",
+    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js",
     "dist": "electron-builder --win nsis",
     "dist:portable": "electron-builder --win portable"
   },
@@ -22,6 +22,7 @@
       "test-utils.js",
       "subject-utils.js",
       "scheduler.js",
+      "completion-utils.js",
       "main.js",
       "preload.js",
       "package.json",

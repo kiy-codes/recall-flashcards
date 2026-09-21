@@ -201,6 +201,50 @@ app.whenReady().then(async () => {
         assert(document.querySelector('#attemptsDrawer').classList.contains('open') && document.querySelector('.attempt-entry'), 'Deck attempt history did not open');
         click('#attemptsClose');
 
+        // Completion dialog: its missed-card actions use only this session's retry IDs.
+        state.studyMode = 'flip'; state.repeatMissed = false; state.shuffled = false;
+        resetStudyRun([one], 'all');
+        const historyBeforeCompletion = state.sessionHistory.length;
+        click('#retryBtn'); await wait(300);
+        assert(!completionDialog.hidden, 'Completion popup did not appear when the queue finished');
+        assert(completionDialog.textContent.includes('Reviewed') && completionDialog.textContent.includes('1') && completionDialog.textContent.includes('To revisit'), 'Completion popup summary was incorrect');
+        assert(completionDialog.querySelector('[data-completion-action="practice"]') && completionDialog.querySelector('[data-completion-action="test"]'), 'Missed-card actions were hidden after a retry');
+        click('[data-completion-action="test"]');
+        assert(!testMode.hidden && cardsForTest(testSetupConfig()).length === 1 && cardsForTest(testSetupConfig())[0].id === one.id, 'Test missed cards did not limit Test Mode to the session misses');
+        assert(state.sessionHistory.length === historyBeforeCompletion + 1, 'Opening Test Mode did not finish the completed session exactly once');
+        closeTestMode(); state.pendingTestCardIds = null;
+
+        resetStudyRun([one], 'all');
+        click('#retryBtn'); await wait(300);
+        click('[data-completion-action="practice"]');
+        assert(state.queue.length === 1 && state.queue[0].id === one.id && state.currentSession.filter === 'session-missed', 'Practice missed cards did not start an isolated missed-card queue');
+        click('#correctBtn'); await wait(300);
+        assert(!completionDialog.hidden, 'Completion popup did not reopen after practicing missed cards');
+        assert(!completionDialog.querySelector('[data-completion-action="practice"]') && !completionDialog.querySelector('[data-completion-action="test"]'), 'Missed-card actions remained visible with no retries');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert(completionDialog.hidden && document.querySelector('#cardPosition').textContent === 'SESSION COMPLETE', 'Escape did not close the completion popup and keep the fallback state');
+        openCompletionDialog(); click('[data-completion-action="close"]');
+        assert(completionDialog.hidden, 'Close action did not dismiss the completion popup');
+        const restartExpected = cardsForStudy().length;
+        openCompletionDialog(); click('[data-completion-action="restart"]');
+        assert(state.queue.length === restartExpected && state.currentIndex === 0, 'Restart deck did not rebuild the active deck with current session settings');
+
+        const secondCard = state.sets[0].cards.find(card => card.id !== one.id);
+        resetStudyRun([one, secondCard], 'all');
+        click('#correctBtn'); await wait(300);
+        click('#correctBtn'); await wait(300);
+        click('[data-completion-action="close"]');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', bubbles: true }));
+        assert(state.currentIndex === 1 && state.correct === 1 && state.history.length === 1, 'One Z keypress undid more than one card');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', repeat: true, bubbles: true }));
+        assert(state.currentIndex === 1 && state.correct === 1, 'Holding Z repeated the undo action');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', bubbles: true }));
+        assert(state.flipped, 'W did not flip the card once');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', repeat: true, bubbles: true }));
+        assert(state.flipped, 'Holding W flipped the card twice');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+        assert(!state.flipped, 'ArrowDown did not flip the card once');
+
         click('#fullscreenBtn');
         await wait(80);
         assert(document.body.classList.contains('focus-study'), 'Fullscreen focus layout did not open');
