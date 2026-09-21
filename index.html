@@ -93,7 +93,7 @@
             </div>
             <p class="help-text">Choose how this run behaves.</p>
             <div class="session-menu" id="sessionMenu" hidden>
-              <label class="session-select">Study cards<select id="studyFilter"><option value="all">All cards</option><option value="flagged">Flagged cards</option><option value="missed">Missed cards</option><option value="new">New cards</option><option value="learning">Learning cards</option></select></label>
+              <label class="session-select">Study cards<select id="studyFilter"><option value="all">All cards</option><option value="due">Due cards</option><option value="flagged">Flagged cards</option><option value="missed">Missed cards</option><option value="new">New cards</option><option value="learning">Learning cards</option></select></label>
               <label class="session-select">Answer mode<select id="studyMode"><option value="flip">Flip cards</option><option value="typed">Type an answer</option></select></label>
               <label class="session-option"><span><b>Shuffle cards</b><small>Mix the order for this run.</small></span><input id="sessionShuffle" type="checkbox" checked /></label>
               <label class="session-option"><span><b>Repeat missed cards</b><small>Show each missed card once more at the end.</small></span><input id="repeatMissed" type="checkbox" /></label>
@@ -232,6 +232,7 @@
     <div class="library-dialog-backdrop" id="importPreviewDialog" hidden><section class="import-preview"><header><div><p class="eyebrow">Safe import</p><h3>Review your import</h3></div><button class="drawer-close" id="importPreviewClose" type="button">×</button></header><div class="import-map"><label>First side<select id="mapFront"></select></label><label>Second side<select id="mapBack"></select></label><label>Tags<select id="mapTags"></select></label><label>Notes<select id="mapNotes"></select></label><label>Hint<select id="mapHint"></select></label><label>Destination<select id="importDestination"></select></label><label id="shareImportModeWrap" hidden>Sharing<select id="shareImportMode"><option value="merge">Merge deck names</option><option value="copy">Create deck copies</option><option value="skip">Skip matching decks</option></select></label><label>Duplicates<select id="duplicateMode"><option value="skip">Skip duplicates</option><option value="keep">Keep duplicates</option><option value="replace">Replace existing cards</option></select></label></div><p id="importPreviewSummary" class="import-preview-summary"></p><div id="importPreviewRows" class="import-preview-rows"></div><footer><button class="dialog-cancel" id="importPreviewCancel" type="button">Cancel</button><button class="primary-button" id="confirmImportBtn" type="button">Import reviewed rows</button></footer></section></div>
     <script src="test-utils.js"></script>
     <script src="subject-utils.js"></script>
+    <script src="scheduler.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

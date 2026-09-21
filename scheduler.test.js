@@ -1,0 +1,11 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { getNextReview, isDue, scheduleCard, createReviewEvent, migrateCard, SCHEDULER_VERSION } = require('./scheduler');
+const at = new Date('2026-01-01T12:00:00.000Z');
+test('new cards are immediately due', () => { assert.equal(isDue({}, at), true); assert.equal(isDue(migrateCard({}), at), true); });
+test('a successful review moves the due date forward', () => { const next = getNextReview({}, 'correct', at); assert.equal(next.repetitions, 1); assert.equal(next.dueAt, '2026-01-02T12:00:00.000Z'); assert.equal(isDue(next, at), false); });
+test('a failed review brings a card back soon', () => { const next = getNextReview({ repetitions: 3, lapses: 1 }, 'retry', at); assert.equal(next.repetitions, 0); assert.equal(next.lapses, 2); assert.equal(next.dueAt, '2026-01-01T12:10:00.000Z'); });
+test('old cards migrate without losing existing data and remain immediately due', () => { const migrated = migrateCard({ id: 'old', state: 'Mastered', reviewCount: 4 }); assert.equal(migrated.id, 'old'); assert.equal(migrated.state, 'Mastered'); assert.equal(migrated.schedulerVersion, SCHEDULER_VERSION); assert.equal(isDue(migrated, at), true); });
+test('due filtering respects boundary times', () => { const card = { dueAt: '2026-01-01T12:00:00.000Z' }; assert.equal(isDue(card, at), true); assert.equal(isDue(card, new Date('2026-01-01T11:59:59.999Z')), false); });
+test('scheduled review metadata is written to the card', () => { const card = {}; scheduleCard(card, 'correct', at); assert.equal(card.lastReviewedAt, at.toISOString()); assert.equal(card.schedulerVersion, SCHEDULER_VERSION); });
+test('review events survive JSON persistence', () => { const event = createReviewEvent({ id: 'card-1', schedulerVersion: SCHEDULER_VERSION }, 'correct', at, 1450, 'deck-1'); const restored = JSON.parse(JSON.stringify([event])); assert.equal(restored[0].cardId, 'card-1'); assert.equal(restored[0].outcome, 'correct'); assert.equal(restored[0].responseTimeMs, 1450); });

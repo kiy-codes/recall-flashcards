@@ -1,6 +1,6 @@
 {
   "name": "recall-flashcards",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "A focused, keyboard-first flashcard app for Windows",
   "main": "main.js",
   "author": "Recall",
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "test": "node --test test-utils.test.js subject-utils.test.js",
+    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js",
     "dist": "electron-builder --win nsis",
     "dist:portable": "electron-builder --win portable"
   },
@@ -21,6 +21,7 @@
       "app.js",
       "test-utils.js",
       "subject-utils.js",
+      "scheduler.js",
       "main.js",
       "preload.js",
       "package.json",

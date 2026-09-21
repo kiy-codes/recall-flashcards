@@ -153,14 +153,20 @@ app.whenReady().then(async () => {
         await wait(300);
         assert(state.queue.length === beforeRetry + 1, 'Repeat-missed option did not queue the card');
         assert(state.retry === 1, 'Retry score did not update');
+        assert(state.reviewLog.length === 1 && state.reviewLog[0].outcome === 'retry', 'Retry review event was not recorded');
+        const retriedCard = state.sets.flatMap(set => set.cards).find(card => card.id === state.reviewLog[0].cardId);
+        assert(state.reviewLog[0].responseTimeMs >= 0 && retriedCard.lastReviewedAt && new Date(retriedCard.dueAt) > new Date(retriedCard.lastReviewedAt), 'Scheduling metadata was not recorded');
         click('#undoBtn');
         assert(state.retry === 0 && state.queue.length === beforeRetry, 'Undo did not restore the session');
+        assert(state.reviewLog.length === 0, 'Undo did not remove the review event');
 
         click('#correctBtn');
         await wait(300);
         assert(state.correct === 1, 'Correct review did not update score');
         assert(state.currentSession.attempts === 1, 'Current session history did not update');
         assert(one.state === 'Learning' && one.correctStreak === 1, 'A reviewed new card did not become Learning');
+        assert(one.lastReviewedAt && new Date(one.dueAt) > new Date(one.lastReviewedAt), 'Successful review did not schedule the card forward');
+        assert(JSON.parse(localStorage.getItem(STORAGE_KEY)).reviewLog.length === 1, 'Review log was not persisted');
         assert(normaliseCard({ front: 'Legacy', back: 'card' }).state === 'New', 'Existing cards do not migrate to the New state');
         state.shuffled = false; state.studyFilter = 'all'; buildQueue();
         click('#correctBtn'); await wait(300);
@@ -176,6 +182,8 @@ app.whenReady().then(async () => {
         assert(state.queue.every(card => card.state === 'New'), 'New-card study filter included a reviewed card');
         state.studyFilter = 'learning'; buildQueue();
         assert(state.queue.every(card => card.state === 'Learning'), 'Learning-card study filter did not work');
+        state.studyFilter = 'due'; buildQueue();
+        assert(state.queue.every(card => RecallScheduler.isDue(card)), 'Due-card study filter included a future card');
         state.studyFilter = 'all'; state.studyMode = 'typed'; state.startSide = 'back'; buildQueue();
         document.querySelector('#typedAnswerInput').value = '  one!!! ';
         document.querySelector('#typedAnswerForm').requestSubmit();

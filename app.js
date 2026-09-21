@@ -14,6 +14,7 @@ const state = {
   animating: false,
   history: [],
   sessionHistory: [],
+  reviewLog: [],
   testHistory: [],
   activeTest: null,
   currentSession: null,
@@ -30,6 +31,7 @@ const state = {
   editingCardId: null,
   importDraft: null,
   hintRevealed: false,
+  cardPresentedAt: null,
   theme: 'system',
   subjectColors: {},
   keybinds: { flip: 'w', retry: 'a', correct: 'd', undo: 'z' },
@@ -60,7 +62,7 @@ const activeCards = () => activeSet()?.cards || [];
 const sideNames = (set) => ({ front: set?.frontLabel?.trim() || 'First side', back: set?.backLabel?.trim() || 'Second side' });
 const CARD_STATES = ['New', 'Learning', 'Mastered'];
 const cleanTags = (value) => Array.from(new Set((Array.isArray(value) ? value : String(value || '').split(',')).map(tag => String(tag).trim()).filter(Boolean)));
-const normaliseCard = (card) => ({ ...card, id: card.id || makeId(), state: CARD_STATES.includes(card.state) ? card.state : 'New', flagged: Boolean(card.flagged), missed: Boolean(card.missed), correctStreak: Number.isFinite(card.correctStreak) ? card.correctStreak : 0, reviewCount: Number.isFinite(card.reviewCount) ? card.reviewCount : 0, tags: cleanTags(card.tags), notes: String(card.notes || ''), hint: String(card.hint || '') });
+const normaliseCard = (card) => RecallScheduler.migrateCard({ ...card, id: card.id || makeId(), state: CARD_STATES.includes(card.state) ? card.state : 'New', flagged: Boolean(card.flagged), missed: Boolean(card.missed), correctStreak: Number.isFinite(card.correctStreak) ? card.correctStreak : 0, reviewCount: Number.isFinite(card.reviewCount) ? card.reviewCount : 0, tags: cleanTags(card.tags), notes: String(card.notes || ''), hint: String(card.hint || '') });
 
 const DEFAULT_KEYBINDS = { flip: 'w', retry: 'a', correct: 'd', undo: 'z' };
 function applyTheme() {
@@ -70,7 +72,7 @@ function applyTheme() {
 }
 function renderKeybinds() { elements.keybindFlip.value = state.keybinds.flip.toUpperCase(); elements.keybindRetry.value = state.keybinds.retry.toUpperCase(); elements.keybindCorrect.value = state.keybinds.correct.toUpperCase(); elements.keybindUndo.value = state.keybinds.undo.toUpperCase(); }
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: state.sets, folders: state.folders, activeSetId: state.activeSetId, sessionHistory: state.sessionHistory, testHistory: state.testHistory, currentSession: state.currentSession, activity: state.activity, shuffled: state.shuffled, repeatMissed: state.repeatMissed, studyFilter: state.studyFilter, studyMode: state.studyMode, theme: state.theme, keybinds: state.keybinds, subjectColors: state.subjectColors }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: state.sets, folders: state.folders, activeSetId: state.activeSetId, sessionHistory: state.sessionHistory, testHistory: state.testHistory, reviewLog: state.reviewLog, currentSession: state.currentSession, activity: state.activity, shuffled: state.shuffled, repeatMissed: state.repeatMissed, studyFilter: state.studyFilter, studyMode: state.studyMode, theme: state.theme, keybinds: state.keybinds, subjectColors: state.subjectColors }));
 }
 
 function load() {
@@ -83,9 +85,10 @@ function load() {
       state.shuffled = saved.shuffled !== false;
       state.sessionHistory = Array.isArray(saved.sessionHistory) ? saved.sessionHistory.filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? saved.performance.filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
       state.testHistory = Array.isArray(saved.testHistory) ? saved.testHistory.filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
+      state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry'].includes(item.outcome)) : [];
       state.currentSession = saved.currentSession?.attempts ? { learned: 0, ...saved.currentSession } : null;
       state.activity = saved.activity && typeof saved.activity === 'object' ? saved.activity : {};
-      state.repeatMissed = Boolean(saved.repeatMissed); state.studyFilter = ['all', 'flagged', 'missed', 'new', 'learning'].includes(saved.studyFilter) ? saved.studyFilter : 'all'; state.studyMode = saved.studyMode === 'typed' ? 'typed' : 'flip';
+      state.repeatMissed = Boolean(saved.repeatMissed); state.studyFilter = ['all', 'due', 'flagged', 'missed', 'new', 'learning'].includes(saved.studyFilter) ? saved.studyFilter : 'all'; state.studyMode = saved.studyMode === 'typed' ? 'typed' : 'flip';
       state.theme = ['system', 'light', 'dark'].includes(saved.theme) ? saved.theme : 'system'; state.keybinds = { ...state.keybinds, ...(saved.keybinds || {}) };
       state.subjectColors = saved.subjectColors && typeof saved.subjectColors === 'object' ? saved.subjectColors : {};
     } else {
@@ -127,6 +130,7 @@ function cardsForStudy() {
   let cards = activeCards();
   if (state.selectedTags.length) cards = cards.filter(card => state.selectedTags.every(tag => card.tags.includes(tag)));
   if (state.studyFilter === 'flagged') return cards.filter(card => card.flagged);
+  if (state.studyFilter === 'due') return cards.filter(card => RecallScheduler.isDue(card));
   if (state.studyFilter === 'missed') return cards.filter(card => card.missed);
   if (state.studyFilter === 'new') return cards.filter(card => card.state === 'New');
   if (state.studyFilter === 'learning') return cards.filter(card => card.state === 'Learning');
@@ -137,7 +141,7 @@ function buildQueue() {
   finishCurrentSession();
   const eligible = cardsForStudy();
   state.queue = state.shuffled ? shuffledCopy(eligible) : [...eligible];
-  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.typedChecked = false; state.hintRevealed = false;
+  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
   startNewSession();
   render();
 }
@@ -163,9 +167,10 @@ function render() {
   elements.studyHint.hidden = !card?.hint; elements.revealHint.textContent = state.hintRevealed ? 'Hide hint' : 'Show hint'; elements.hintText.textContent = state.hintRevealed ? card?.hint || '' : '';
   elements.typedForm.hidden = state.studyMode !== 'typed' || !card; elements.typedInput.disabled = !card || Boolean(state.typedChecked) || state.animating; elements.typedSubmit.textContent = state.typedChecked ? 'Next card' : 'Check';
   if (!card) {
-    elements.cardPosition.textContent = activeCards().length ? 'SESSION COMPLETE' : 'ADD CARDS TO BEGIN';
-    elements.cardSideLabel.textContent = activeCards().length ? 'NICE WORK' : 'YOUR DECK';
-    elements.cardContent.textContent = activeCards().length ? `You reviewed ${completed} ${completed === 1 ? 'card' : 'cards'}. Reset progress to study again.` : 'Add a card below, or paste in a list to make a deck in seconds.';
+    const noDueCards = state.studyFilter === 'due' && activeCards().length && !total;
+    elements.cardPosition.textContent = noDueCards ? 'NO CARDS DUE' : activeCards().length ? 'SESSION COMPLETE' : 'ADD CARDS TO BEGIN';
+    elements.cardSideLabel.textContent = noDueCards ? 'ALL CAUGHT UP' : activeCards().length ? 'NICE WORK' : 'YOUR DECK';
+    elements.cardContent.textContent = noDueCards ? 'There are no cards due right now. Switch to All cards to study ahead, or come back when your next review is due.' : activeCards().length ? `You reviewed ${completed} ${completed === 1 ? 'card' : 'cards'}. Reset progress to study again.` : 'Add a card below, or paste in a list to make a deck in seconds.';
   } else {
     const showFront = state.flipped ? state.startSide !== 'front' : state.startSide === 'front';
     elements.cardPosition.textContent = `CARD ${state.currentIndex + 1} OF ${total}`;
@@ -426,17 +431,23 @@ function answersMatch(actual, expected) { return normaliseAnswer(actual) === nor
 function review(result) {
   if (!currentCard() || state.animating) return;
   const answeredCard = currentCard();
+  const schedulingBefore = { dueAt: answeredCard.dueAt, lastReviewedAt: answeredCard.lastReviewedAt, repetitions: answeredCard.repetitions, lapses: answeredCard.lapses, schedulerVersion: answeredCard.schedulerVersion };
+  const reviewedAt = new Date();
+  const responseTimeMs = Math.max(0, reviewedAt.getTime() - (state.cardPresentedAt || reviewedAt.getTime()));
+  RecallScheduler.scheduleCard(answeredCard, result, reviewedAt);
+  const reviewEvent = RecallScheduler.createReviewEvent(answeredCard, result, reviewedAt, responseTimeMs, activeSet()?.id);
+  state.reviewLog.push(reviewEvent);
   state.animating = true; elements.card.classList.remove('slide-left', 'slide-right'); void elements.card.offsetWidth; elements.card.classList.add(result === 'correct' ? 'slide-right' : 'slide-left');
   setTimeout(() => {
     let repeatIndex = null;
     if (result === 'retry' && state.repeatMissed && !state.sessionRepeatedIds.has(answeredCard.id)) { repeatIndex = state.queue.length; state.queue.push(answeredCard); state.sessionRepeatedIds.add(answeredCard.id); }
     const transition = applyCardReview(answeredCard, result); const activity = recordActivity(answeredCard, transition.learned);
-    state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, activity });
+    state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, schedulingBefore, activity, reviewLogId: reviewEvent.id });
     if (!state.currentSession) startNewSession();
     state.currentSession.attempts += 1;
     if (result === 'correct') state.currentSession.correct += 1; else state.currentSession.retry += 1;
     if (transition.learned) state.currentSession.learned += 1;
-    if (result === 'correct') state.correct++; else state.retry++; state.currentIndex++; state.flipped = false; state.typedChecked = false; state.hintRevealed = false; elements.typedInput.value = ''; state.animating = false; save(); render();
+    if (result === 'correct') state.correct++; else state.retry++; state.currentIndex++; state.cardPresentedAt = Date.now(); state.flipped = false; state.typedChecked = false; state.hintRevealed = false; elements.typedInput.value = ''; state.animating = false; save(); render();
   }, 250);
 }
 
@@ -447,8 +458,8 @@ function undoReview() {
   if (last.repeatIndex !== null) { state.queue.splice(last.repeatIndex, 1); state.sessionRepeatedIds.delete(last.cardId); }
   if (last.result === 'correct') state.correct = Math.max(0, state.correct - 1); else state.retry = Math.max(0, state.retry - 1);
   if (state.currentSession) { state.currentSession.attempts = Math.max(0, state.currentSession.attempts - 1); if (last.result === 'correct') state.currentSession.correct = Math.max(0, state.currentSession.correct - 1); else state.currentSession.retry = Math.max(0, state.currentSession.retry - 1); }
-  const card = activeCards().find(item => item.id === last.cardId); if (card && last.cardBefore) Object.assign(card, last.cardBefore); undoActivity(last.activity); if (last.activity?.learned && state.currentSession) state.currentSession.learned = Math.max(0, state.currentSession.learned - 1);
-  state.flipped = false; state.typedChecked = false; state.hintRevealed = false; save(); render(); showToast('Last answer undone.');
+  const card = state.sets.flatMap(set => set.cards).find(item => item.id === last.cardId); if (card && last.cardBefore) Object.assign(card, last.cardBefore); if (card && last.schedulingBefore) Object.assign(card, last.schedulingBefore); if (last.reviewLogId) state.reviewLog = state.reviewLog.filter(event => event.id !== last.reviewLogId); undoActivity(last.activity); if (last.activity?.learned && state.currentSession) state.currentSession.learned = Math.max(0, state.currentSession.learned - 1);
+  state.flipped = false; state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now(); save(); render(); showToast('Last answer undone.');
 }
 
 async function enterFocus() {
