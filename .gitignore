@@ -11,6 +11,9 @@ release-*/
 .env.*
 !.env.example
 
+# Temporary Codex attachments and screenshots
+.codex-remote-attachments/
+
 # Logs
 *.log
 
