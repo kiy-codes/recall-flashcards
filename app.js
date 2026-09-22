@@ -238,9 +238,10 @@ function renderDeck() {
     if (state.selectingCards && state.selectedCardIds.has(card.id)) item.classList.add('selected');
     const select = state.selectingCards ? `<label class="card-check"><input type="checkbox" data-select-card="${card.id}" ${state.selectedCardIds.has(card.id) ? 'checked' : ''} aria-label="Select card" /></label>` : '';
     const gender = card.wordInfo?.gender;
-    const genderChip = gender && !['unknown', 'not_applicable'].includes(gender) ? `<span class="card-tags"><i title="Grammatical gender">${escapeHtml(gender)}</i></span>` : '';
+    const genderChip = gender && !['unknown', 'not_applicable'].includes(gender) ? `<span class="card-tags"><i title="Grammatical gender">${escapeHtml(gender)}</i></span>` : '<span class="gender-slot" aria-hidden="true"></span>';
     const front = displayCardSide(card, 'front');
-    item.innerHTML = `${select}<span class="side front-side" title="${escapeHtml(front)}">${escapeHtml(front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><span class="deck-card-state ${card.state.toLowerCase()}">${escapeHtml(card.state)}</span>${card.flagged ? '<span class="deck-flag" title="Flagged">Flagged</span>' : ''}${genderChip}${card.hint ? '<span class="card-detail" title="Has hint">Hint</span>' : ''}${card.notes ? '<span class="card-detail" title="Has notes">Notes</span>' : ''}<button class="edit-card" type="button" data-edit="${card.id}">Edit</button><button class="delete-card" type="button" data-delete="${card.id}" aria-label="Delete card">&times;</button>`;
+    const indicators = `${card.flagged ? '<span class="deck-flag" title="Flagged" aria-label="Flagged">&#9873;</span>' : ''}${card.hint ? '<span class="card-detail" title="Has hint" aria-label="Has hint">?</span>' : ''}${card.notes ? '<span class="card-detail" title="Has notes" aria-label="Has notes">&#9638;</span>' : ''}`;
+    item.innerHTML = `${select}<span class="side front-side" title="${escapeHtml(front)}">${escapeHtml(front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><div class="deck-card-meta">${genderChip}<span class="deck-card-state ${card.state.toLowerCase()}">${escapeHtml(card.state)}</span><span class="deck-card-indicators">${indicators}</span></div><div class="deck-card-actions"><button class="edit-card" type="button" data-edit="${card.id}">Edit</button><button class="delete-card" type="button" data-delete="${card.id}" aria-label="Delete card">&times;</button></div>`;
     elements.deckList.append(item);
   });
   if (!visibleDeckCards.length && activeCards().length) elements.deckList.innerHTML = '<p class="deck-no-results">No cards match your search or deck tag filters.</p>';
@@ -1038,7 +1039,11 @@ function startTest() {
 }
 function activeTestQuestion() { return state.activeTest?.questions[state.activeTest.currentIndex]; }
 function testAnswerValue(question) { return state.activeTest.config.promptSide === 'front' ? question.back : question.front; }
-function testPromptValue(question) { const side = state.activeTest.config.promptSide === 'front' ? 'front' : 'back'; return displayCardSide(question, side); }
+function testPromptValue(question) {
+  const side = state.activeTest.config.promptSide === 'front' ? 'front' : 'back';
+  // Gender quizzes must test the gender, not reveal it in the prompt.
+  return question.answerType === 'gender' ? String(question[side] || '') : displayCardSide(question, side);
+}
 function renderTestQuestion() {
   const test = state.activeTest; const question = activeTestQuestion(); if (!test || !question) return finishTest();
   const promptName = test.config.promptSide === 'front' ? question.frontLabel : question.backLabel; const answerName = test.config.promptSide === 'front' ? question.backLabel : question.frontLabel;
@@ -1258,5 +1263,46 @@ renderTestQuestion = function () {
   const question = activeTestQuestion();
   if (question?.answerType === 'gender') { const label = document.querySelector('.test-answer-label'); if (label) label.innerHTML = 'Choose the <b>grammatical gender</b>'; }
 };
+
+// Keep a normal test focused on the deck the learner is currently viewing.
+// Extra material remains available through the optional folder picker instead of
+// presenting a distracting list of every deck in the library.
+const openTestSetupWithFocusedDeck = openTestSetup;
+openTestSetup = function () {
+  openTestSetupWithFocusedDeck();
+  const deck = activeSet();
+  const deckList = testMode.querySelector('.test-choice-group .test-check-list');
+  if (deckList && deck) {
+    deckList.innerHTML = `<div class="test-check test-active-deck" aria-label="Selected deck: ${escapeHtml(deck.name)}"><span>${escapeHtml(deck.name)}</span><small>${deck.cards.length} cards</small></div>`;
+  }
+  const folderGroup = [...testMode.querySelectorAll('.test-choice-group')].find(group => group.querySelector('h3')?.textContent.trim() === 'Folders');
+  if (folderGroup) {
+    folderGroup.innerHTML = `<details class="test-folder-picker"><summary>Folders <small>optional</small></summary><p>Include every deck in selected folders.</p><div class="test-check-list">${testFolderChoices()}</div></details>`;
+  }
+  syncTestTimingControls();
+  refreshTestPoolNote();
+};
+
+function syncTestTimingControls() {
+  const timed = $('#testTimed');
+  const limit = testMode.querySelector('.test-limit-field');
+  if (!timed || !limit) return;
+  limit.hidden = !timed.checked;
+}
+
+const testSetupConfigWithUntimedElapsed = testSetupConfig;
+testSetupConfig = function () {
+  const config = testSetupConfigWithUntimedElapsed();
+  const deckId = activeSet()?.id;
+  if (deckId) config.deckIds = [...new Set([deckId, ...config.deckIds])];
+  // Untimed tests always track elapsed time and never retain a hidden limit.
+  if (!config.timed) config.timeLimitSeconds = 0;
+  return config;
+};
+
+testMode.addEventListener('change', event => {
+  if (event.target.id === 'testTimed') syncTestTimingControls();
+  if (event.target.matches('[data-test-deck], [data-test-folder], [data-test-tag], #testQuestionCount, #testCardFilter, #testTimed')) refreshTestPoolNote();
+});
 
 deckSubjectButton.addEventListener('click', event => { event.stopImmediatePropagation(); renderDeckMetadataDialog(); }, true);
