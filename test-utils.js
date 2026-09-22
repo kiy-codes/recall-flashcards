@@ -27,8 +27,8 @@
   const reviewItems = attempt => (attempt.questions || []).map(question => {
     const answer = (attempt.answers || []).find(item => item.questionId === question.id && item.deckId === question.deckId);
     const promptSide = attempt.config?.promptSide || 'front';
-    const expected = promptSide === 'front' ? question.back : question.front;
-    const prompt = promptSide === 'front' ? question.front : question.back;
+    const expected = question.answerType === 'gender' ? question.genderAnswer : promptSide === 'front' ? question.back : question.front;
+    const prompt = question.answerType === 'gender' ? question.front : promptSide === 'front' ? question.front : question.back;
     return answer || { questionId: question.id, deckId: question.deckId, deckName: question.deckName, tags: question.tags || [], prompt, correctAnswer: expected, userAnswer: '—', answerType: question.answerType || attempt.config?.style || 'typed', result: 'unanswered', timeMs: null };
   });
   const remainingMs = (attempt, now = Date.now()) => attempt?.deadlineAt ? Math.max(0, new Date(attempt.deadlineAt).getTime() - now) : null;

@@ -61,9 +61,31 @@ let libraryDialogAction = null;
 const activeSet = () => state.sets.find(set => set.id === state.activeSetId) || state.sets[0];
 const activeCards = () => activeSet()?.cards || [];
 const sideNames = (set) => ({ front: set?.frontLabel?.trim() || 'First side', back: set?.backLabel?.trim() || 'Second side' });
+const displayCardSide = (card, side) => {
+  const value = String(card?.[side] || '');
+  const marker = side === 'front' ? String(card?.wordInfo?.originalMarker || '').trim() : '';
+  return marker && !value.endsWith(marker) ? `${value} ${marker}`.trim() : value;
+};
 const CARD_STATES = ['New', 'Learning', 'Mastered'];
-const cleanTags = (value) => Array.from(new Set((Array.isArray(value) ? value : String(value || '').split(',')).map(tag => String(tag).trim()).filter(Boolean)));
-const normaliseCard = (card) => RecallScheduler.migrateCard({ ...card, id: card.id || makeId(), state: CARD_STATES.includes(card.state) ? card.state : 'New', flagged: Boolean(card.flagged), missed: Boolean(card.missed), correctStreak: Number.isFinite(card.correctStreak) ? card.correctStreak : 0, reviewCount: Number.isFinite(card.reviewCount) ? card.reviewCount : 0, tags: cleanTags(card.tags), notes: String(card.notes || ''), hint: String(card.hint || '') });
+const cleanTags = (value) => RecallMetadata.normaliseDeckTags(value);
+const normaliseCard = (card) => {
+  const { tags: legacyTags, ...rest } = card || {};
+  const extracted = RecallMetadata.extractWordInfo(rest.front, rest.wordInfo);
+  return RecallScheduler.migrateCard({ ...rest, id: rest.id || makeId(), front: extracted.cleanWord, state: CARD_STATES.includes(rest.state) ? rest.state : 'New', flagged: Boolean(rest.flagged), missed: Boolean(rest.missed), correctStreak: Number.isFinite(rest.correctStreak) ? rest.correctStreak : 0, reviewCount: Number.isFinite(rest.reviewCount) ? rest.reviewCount : 0, notes: String(rest.notes || ''), hint: String(rest.hint || ''), acceptedAnswers: cleanTags(rest.acceptedAnswers), wordInfo: extracted.wordInfo });
+};
+const knownLanguage = value => RecallMetadata.LANGUAGES.find(language => language.name.toLocaleLowerCase() === String(value || '').trim().toLocaleLowerCase());
+const normaliseDeck = (set, index = 0) => {
+  const rawCards = Array.isArray(set?.cards) ? set.cards : [];
+  const legacyTagMigration = RecallMetadata.migrateLegacyCardTags(set?.tags, rawCards);
+  const legacyCardTags = legacyTagMigration.tags;
+  const subjectTag = [...(set?.tags || []), ...legacyCardTags].map(RecallSubjects.parseSubjectTag).find(Boolean);
+  const subject = String(set?.subject || set?.primarySubject || subjectTag?.subject || 'General').trim() || 'General';
+  const language = RecallMetadata.normaliseLanguage(set?.language || knownLanguage(subject));
+  const domain = RecallMetadata.normaliseDomain(set?.domain || (language ? 'language' : 'other'));
+  const tags = legacyTagMigration.tags;
+  const cards = rawCards.map(normaliseCard).map(card => ({ ...card, wordInfo: { ...card.wordInfo, language: card.wordInfo.language || (domain === 'language' ? language : null) } }));
+  return { ...set, subject, domain, language: domain === 'language' ? language : null, tags, primarySubject: subject, legacyTagMigration: legacyTagMigration.unresolved.length ? { unresolved: legacyTagMigration.unresolved, migratedAt: new Date().toISOString() } : null, frontLabel: set?.frontLabel || 'First side', backLabel: set?.backLabel || 'Second side', order: Number.isFinite(set?.order) ? set.order : index, createdAt: set?.createdAt || Date.now() + index, cards };
+};
 
 const DEFAULT_KEYBINDS = { flip: 'w', retry: 'a', correct: 'd', undo: 'z' };
 function applyTheme() {
@@ -80,14 +102,14 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (saved?.sets?.length) {
-      state.sets = saved.sets.map((set, index) => ({ ...set, tags: cleanTags(set.tags), primarySubject: typeof set.primarySubject === 'string' ? set.primarySubject : null, frontLabel: set.frontLabel || 'First side', backLabel: set.backLabel || 'Second side', order: Number.isFinite(set.order) ? set.order : index, createdAt: set.createdAt || Date.now() + index, cards: Array.isArray(set.cards) ? set.cards.map(normaliseCard) : [] }));
+      state.sets = saved.sets.map(normaliseDeck);
       state.folders = Array.isArray(saved.folders) ? saved.folders.map((folder, index) => ({ ...folder, order: Number.isFinite(folder.order) ? folder.order : index, color: folder.color || FOLDER_COLORS[index % FOLDER_COLORS.length] })) : [];
       state.activeSetId = state.sets.some(set => set.id === saved.activeSetId) ? saved.activeSetId : state.sets[0].id;
       state.shuffled = saved.shuffled !== false;
       state.sessionHistory = Array.isArray(saved.sessionHistory) ? saved.sessionHistory.filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? saved.performance.filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
       state.testHistory = Array.isArray(saved.testHistory) ? saved.testHistory.filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
       state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry'].includes(item.outcome)) : [];
-      state.currentSession = saved.currentSession?.attempts ? { learned: 0, missedCardIds: [], ...saved.currentSession, missedCardIds: Array.isArray(saved.currentSession.missedCardIds) ? saved.currentSession.missedCardIds : [] } : null;
+      state.currentSession = saved.currentSession?.attempts ? { learned: 0, typos: 0, missedCardIds: [], ...saved.currentSession, missedCardIds: Array.isArray(saved.currentSession.missedCardIds) ? saved.currentSession.missedCardIds : [] } : null;
       state.activity = saved.activity && typeof saved.activity === 'object' ? saved.activity : {};
       state.repeatMissed = Boolean(saved.repeatMissed); state.studyFilter = ['all', 'due', 'flagged', 'missed', 'new', 'learning'].includes(saved.studyFilter) ? saved.studyFilter : 'all'; state.studyMode = saved.studyMode === 'typed' ? 'typed' : 'flip';
       state.theme = ['system', 'light', 'dark'].includes(saved.theme) ? saved.theme : 'system'; state.keybinds = { ...state.keybinds, ...(saved.keybinds || {}) };
@@ -95,13 +117,13 @@ function load() {
     } else {
       const legacy = JSON.parse(localStorage.getItem('recall-flashcards-v1'));
       const cards = Array.isArray(legacy?.cards) ? legacy.cards : [];
-      const set = { id: makeId(), name: 'My study deck', folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: cards.filter(card => card.front && card.back).map(normaliseCard) };
+      const set = normaliseDeck({ id: makeId(), name: 'My study deck', subject: 'General', domain: 'other', tags: [], folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: cards.filter(card => card.front && card.back) });
       state.sets = [set]; state.activeSetId = set.id; state.shuffled = legacy?.shuffled !== false;
       if (cards.length) save();
     }
   } catch { localStorage.removeItem(STORAGE_KEY); }
   if (!state.sets.length) {
-    const set = { id: makeId(), name: 'My study deck', folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: [] };
+    const set = normaliseDeck({ id: makeId(), name: 'My study deck', subject: 'General', domain: 'other', tags: [], folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: [] });
     state.sets = [set]; state.activeSetId = set.id;
   }
   elements.sessionShuffle.checked = state.shuffled; elements.repeatMissed.checked = state.repeatMissed; elements.studyFilter.value = state.studyFilter; elements.studyMode.value = state.studyMode;
@@ -116,7 +138,7 @@ function shuffledCopy(cards) {
 
 function startNewSession() {
   const set = activeSet();
-  state.currentSession = { id: makeId(), deckId: set?.id || null, deckName: set?.name || 'Study set', startedAt: new Date().toISOString(), attempts: 0, correct: 0, retry: 0, learned: 0, missedCardIds: [], filter: state.studyFilter, mode: state.studyMode };
+  state.currentSession = { id: makeId(), deckId: set?.id || null, deckName: set?.name || 'Study set', startedAt: new Date().toISOString(), attempts: 0, correct: 0, retry: 0, typos: 0, learned: 0, missedCardIds: [], filter: state.studyFilter, mode: state.studyMode };
 }
 
 function finishCurrentSession() {
@@ -129,7 +151,7 @@ function finishCurrentSession() {
 
 function cardsForStudy() {
   let cards = activeCards();
-  if (state.selectedTags.length) cards = cards.filter(card => state.selectedTags.every(tag => card.tags.includes(tag)));
+  if (state.selectedTags.length && !state.selectedTags.every(tag => cleanTags(activeSet()?.tags).map(item => item.toLocaleLowerCase()).includes(tag.toLocaleLowerCase()))) cards = [];
   if (state.studyFilter === 'flagged') return cards.filter(card => card.flagged);
   if (state.studyFilter === 'due') return cards.filter(card => RecallScheduler.isDue(card));
   if (state.studyFilter === 'missed') return cards.filter(card => card.missed);
@@ -187,7 +209,7 @@ function render() {
     const showFront = state.flipped ? state.startSide !== 'front' : state.startSide === 'front';
     elements.cardPosition.textContent = `CARD ${state.currentIndex + 1} OF ${total}`;
     elements.cardSideLabel.textContent = `${showFront ? names.front : names.back} · ${showFront ? 'PROMPT' : 'ANSWER'}`;
-    elements.cardContent.textContent = showFront ? card.front : card.back;
+    elements.cardContent.textContent = displayCardSide(card, showFront ? 'front' : 'back');
     const expected = showFront ? card.back : card.front; elements.typedPrompt.textContent = `Type the ${showFront ? names.back : names.front}`;
     if (state.typedChecked) { elements.typedFeedback.textContent = `${state.typedChecked.accepted ? 'Correct' : 'Not quite'} — expected: ${expected}`; elements.typedFeedback.className = `typed-feedback ${state.typedChecked.accepted ? 'accepted' : 'rejected'}`; } else { elements.typedFeedback.textContent = ''; elements.typedFeedback.className = 'typed-feedback'; }
   }
@@ -198,7 +220,32 @@ function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, char => ({
 
 function renderDeck() {
   elements.deckList.innerHTML = '';
-  const allTags = Array.from(new Set(activeCards().flatMap(card => card.tags))).sort((a, b) => a.localeCompare(b));
+  const deck = activeSet();
+  const deckTagsForList = cleanTags(deck?.tags || []);
+  elements.tagFilterOptions.innerHTML = deckTagsForList.length ? deckTagsForList.map(tag => `<label><input type="checkbox" value="${escapeHtml(tag)}" ${state.selectedTags.includes(tag) ? 'checked' : ''}/><span>${escapeHtml(tag)}</span></label>`).join('') : '<span class="picker-empty">No tags on this deck</span>';
+  elements.tagFilterSummary.textContent = state.selectedTags.length ? `${state.selectedTags.length} selected` : 'All deck tags';
+  elements.bulkMoveDeck.innerHTML = state.sets.filter(set => set.id !== deck?.id).map(set => `<option value="${set.id}">${escapeHtml(set.name)}</option>`).join('');
+  elements.shareDeckOptions.innerHTML = state.sets.map(set => `<label><input type="checkbox" value="${set.id}" ${set.id === deck?.id ? 'checked' : ''}/><span>${escapeHtml(set.name)}</span></label>`).join('');
+  elements.shareDeckSummary.textContent = `${elements.shareDeckOptions.querySelectorAll('input:checked').length} selected`;
+  elements.selectCards.textContent = state.selectingCards ? 'Done selecting' : 'Select cards';
+  elements.selectionCount.textContent = `${state.selectedCardIds.size} selected`;
+  elements.bulkActions.hidden = !state.selectingCards;
+  const deckSearchTerm = state.deckSearch.trim().toLocaleLowerCase();
+  const deckTagsMatch = !state.selectedTags.length || state.selectedTags.every(tag => deckTagsForList.some(item => item.toLocaleLowerCase() === tag.toLocaleLowerCase()));
+  const visibleDeckCards = activeCards().filter(card => deckTagsMatch && (!deckSearchTerm || [card.front, card.back, card.notes, card.hint, ...deckTagsForList, card.wordInfo?.gender, card.wordInfo?.partOfSpeech].join(' ').toLocaleLowerCase().includes(deckSearchTerm)));
+  visibleDeckCards.forEach(card => {
+    const item = document.createElement('article'); item.className = 'deck-item';
+    if (state.selectingCards && state.selectedCardIds.has(card.id)) item.classList.add('selected');
+    const select = state.selectingCards ? `<label class="card-check"><input type="checkbox" data-select-card="${card.id}" ${state.selectedCardIds.has(card.id) ? 'checked' : ''} aria-label="Select card" /></label>` : '';
+    const gender = card.wordInfo?.gender;
+    const genderChip = gender && !['unknown', 'not_applicable'].includes(gender) ? `<span class="card-tags"><i title="Grammatical gender">${escapeHtml(gender)}</i></span>` : '';
+    const front = displayCardSide(card, 'front');
+    item.innerHTML = `${select}<span class="side front-side" title="${escapeHtml(front)}">${escapeHtml(front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><span class="deck-card-state ${card.state.toLowerCase()}">${escapeHtml(card.state)}</span>${card.flagged ? '<span class="deck-flag" title="Flagged">Flagged</span>' : ''}${genderChip}${card.hint ? '<span class="card-detail" title="Has hint">Hint</span>' : ''}${card.notes ? '<span class="card-detail" title="Has notes">Notes</span>' : ''}<button class="edit-card" type="button" data-edit="${card.id}">Edit</button><button class="delete-card" type="button" data-delete="${card.id}" aria-label="Delete card">&times;</button>`;
+    elements.deckList.append(item);
+  });
+  if (!visibleDeckCards.length && activeCards().length) elements.deckList.innerHTML = '<p class="deck-no-results">No cards match your search or deck tag filters.</p>';
+  return;
+  const allTags = cleanTags(activeSet()?.tags || []).sort((a, b) => a.localeCompare(b));
   elements.tagFilterOptions.innerHTML = allTags.length ? allTags.map(tag => `<label><input type="checkbox" value="${escapeHtml(tag)}" ${state.selectedTags.includes(tag) ? 'checked' : ''}/><span>${escapeHtml(tag)}</span></label>`).join('') : '<span class="picker-empty">No tags in this deck</span>';
   elements.tagFilterSummary.textContent = state.selectedTags.length ? `${state.selectedTags.length} selected` : 'All tags';
   elements.bulkMoveDeck.innerHTML = state.sets.filter(set => set.id !== activeSet()?.id).map(set => `<option value="${set.id}">${escapeHtml(set.name)}</option>`).join('');
@@ -206,7 +253,7 @@ function renderDeck() {
   const sharedCount = elements.shareDeckOptions.querySelectorAll('input:checked').length; elements.shareDeckSummary.textContent = `${sharedCount} selected`;
   elements.selectCards.textContent = state.selectingCards ? 'Done selecting' : 'Select cards'; elements.selectionCount.textContent = `${state.selectedCardIds.size} selected`; elements.bulkActions.hidden = !state.selectingCards;
   const term = state.deckSearch.trim().toLocaleLowerCase();
-  const visible = activeCards().filter(card => (!term || [card.front, card.back, card.notes, card.hint, ...card.tags].join(' ').toLocaleLowerCase().includes(term)) && (!state.selectedTags.length || state.selectedTags.every(tag => card.tags.includes(tag))));
+  const visible = activeCards().filter(card => (!term || [card.front, card.back, card.notes, card.hint, ...(activeSet()?.tags || [])].join(' ').toLocaleLowerCase().includes(term)) && (!state.selectedTags.length || state.selectedTags.every(tag => (activeSet()?.tags || []).some(deckTag => deckTag.toLocaleLowerCase() === tag.toLocaleLowerCase()))));
   visible.forEach(card => {
     const item = document.createElement('article'); item.className = 'deck-item';
     if (state.selectingCards && state.selectedCardIds.has(card.id)) item.classList.add('selected');
@@ -520,6 +567,7 @@ function review(result) {
   const responseTimeMs = Math.max(0, reviewedAt.getTime() - (state.cardPresentedAt || reviewedAt.getTime()));
   RecallScheduler.scheduleCard(answeredCard, result, reviewedAt);
   const reviewEvent = RecallScheduler.createReviewEvent(answeredCard, result, reviewedAt, responseTimeMs, activeSet()?.id);
+  reviewEvent.answerClassification = state.typedChecked?.classification || null;
   state.reviewLog.push(reviewEvent);
   state.animating = true; elements.card.classList.remove('slide-left', 'slide-right'); void elements.card.offsetWidth; elements.card.classList.add(result === 'correct' ? 'slide-right' : 'slide-left');
   setTimeout(() => {
@@ -532,6 +580,7 @@ function review(result) {
     state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, schedulingBefore, activity, reviewLogId: reviewEvent.id, missedAdded });
     state.currentSession.attempts += 1;
     if (result === 'correct') state.currentSession.correct += 1; else state.currentSession.retry += 1;
+    if (state.typedChecked?.classification === 'typo') state.currentSession.typos = (state.currentSession.typos || 0) + 1;
     if (transition.learned) state.currentSession.learned += 1;
     if (result === 'correct') state.correct++; else state.retry++; state.currentIndex++; const completedQueue = state.currentIndex >= state.queue.length; state.cardPresentedAt = Date.now(); state.flipped = false; state.typedChecked = false; state.hintRevealed = false; elements.typedInput.value = ''; state.animating = false; save(); render(); if (completedQueue) openCompletionDialog();
   }, 250);
@@ -562,7 +611,8 @@ function cardKey(card) { return normaliseAnswer(card.front) + '\u0000' + normali
 function findDuplicate(card, cards = activeCards()) { const key = cardKey(card); return cards.find(item => cardKey(item) === key); }
 function addCards(cards, duplicateMode = 'keep', destination = activeSet()) {
   const set = destination; if (!set) return 0;
-  let added = 0; cards.map(card => normaliseCard({ ...card, tags: cleanTags([...(set.tags || []), ...(card.tags || [])]), front: String(card.front || '').trim(), back: String(card.back || '').trim(), id: makeId() })).filter(card => card.front && card.back).forEach(card => {
+  set.tags = cleanTags([...(set.tags || []), ...cards.flatMap(card => card.tags || [])]);
+  let added = 0; cards.map(card => normaliseCard({ ...card, front: String(card.front || '').trim(), back: String(card.back || '').trim(), id: makeId() })).filter(card => card.front && card.back).forEach(card => {
     const existing = findDuplicate(card, set.cards);
     if (existing && duplicateMode === 'skip') return;
     if (existing && duplicateMode === 'replace') { Object.assign(existing, { ...card, id: existing.id, flagged: existing.flagged, state: existing.state, missed: existing.missed, correctStreak: existing.correctStreak, reviewCount: existing.reviewCount }); added += 1; return; }
@@ -595,27 +645,68 @@ function parseList(text, format) {
   if (open) cards.push(open); return cards.filter(card => card.front && card.back);
 }
 
-const EXPORT_COLUMNS = ['first_side', 'second_side', 'tags', 'notes', 'hint', 'flagged', 'state', 'missed', 'correct_streak', 'review_count'];
+const EXPORT_COLUMNS = ['first_side', 'second_side', 'deck_subject', 'deck_domain', 'deck_language_code', 'deck_language_name', 'deck_tags', 'notes', 'hint', 'flagged', 'state', 'missed', 'correct_streak', 'review_count', 'gender', 'original_marker', 'part_of_speech', 'accepted_answers'];
 function parseDelimited(text, delimiter) {
   const rows = []; let row = []; let value = ''; let quoted = false;
   for (let index = 0; index < text.length; index += 1) { const char = text[index]; const next = text[index + 1]; if (char === '"' && quoted && next === '"') { value += '"'; index += 1; } else if (char === '"') quoted = !quoted; else if (char === delimiter && !quoted) { row.push(value); value = ''; } else if ((char === '\n' || char === '\r') && !quoted) { if (char === '\r' && next === '\n') index += 1; row.push(value); if (row.some(cell => cell.trim())) rows.push(row); row = []; value = ''; } else value += char; }
   row.push(value); if (row.some(cell => cell.trim())) rows.push(row); return rows;
 }
 function rowsToImportDraft(rows) {
-  const headers = rows[0]?.map((value, index) => String(value || '').trim() || `Column ${index + 1}`) || []; const data = rows.slice(1).map((cells, index) => ({ id: makeId(), cells, include: true, sourceRow: index + 2 }));
-  return { kind: 'cards', headers, rows: data, defaults: { front: 0, back: 1, tags: headers.findIndex(header => /tag/i.test(header)), notes: headers.findIndex(header => /note/i.test(header)), hint: headers.findIndex(header => /hint/i.test(header)) } };
+  const headers = rows[0]?.map((value, index) => String(value || '').trim() || `Column ${index + 1}`) || []; const data = rows.slice(1).map((cells, index) => ({ id: makeId(), cells, include: true, sourceRow: index + 2, overrides: {} }));
+  const mapped = RecallMetadata.suggestImportMappings(headers);
+  const find = pattern => headers.findIndex(header => pattern.test(header.toLocaleLowerCase()));
+  return { kind: 'cards', headers, rows: data, deckMetadata: { subject: find(/deck_?subject|^subject$/), domain: find(/deck_?domain|^domain$/), languageCode: find(/language_?code/), languageName: find(/language_?name/), tags: mapped.tags }, defaults: mapped, destination: 'active', deckName: '', metadata: null };
 }
 function openImportPreview(cards, headers = ['First side', 'Second side']) {
   const rows = cards.map((card, index) => ({ id: makeId(), cells: [card.front || '', card.back || '', (card.tags || []).join(', '), card.notes || '', card.hint || ''], include: true, sourceRow: index + 1 }));
   state.importDraft = { kind: 'cards', headers: headers.length >= 5 ? headers : ['First side', 'Second side', 'Tags', 'Notes', 'Hint'], rows, defaults: { front: 0, back: 1, tags: 2, notes: 3, hint: 4 } }; renderImportPreview(); elements.importPreview.hidden = false;
 }
 function openSharePreview(payload) {
-  const rows = (payload.sets || []).flatMap(set => (set.cards || []).map((card, index) => ({ id: makeId(), cells: [card.front || '', card.back || '', (card.tags || []).join(', '), card.notes || '', card.hint || ''], include: true, sourceRow: `${set.name} · ${index + 1}`, sourceSet: set.name, sourceFolderId: set.folderId, original: card })));
+  const rows = (payload.sets || []).flatMap(set => (set.cards || []).map((card, index) => ({ id: makeId(), cells: [card.front || '', card.back || '', (set.tags || card.tags || []).join(', '), card.notes || '', card.hint || ''], include: true, sourceRow: `${set.name} · ${index + 1}`, sourceSet: set.name, sourceFolderId: set.folderId, original: card })));
   state.importDraft = { kind: 'share', headers: ['First side', 'Second side', 'Tags', 'Notes', 'Hint'], rows, folders: payload.folders || [], sets: payload.sets || [], defaults: { front: 0, back: 1, tags: 2, notes: 3, hint: 4 } }; renderImportPreview(); elements.importPreview.hidden = false;
 }
 function mappingOptions(selected) { return `<option value="-1">Do not import</option>${state.importDraft.headers.map((header, index) => `<option value="${index}" ${index === selected ? 'selected' : ''}>${escapeHtml(header)}</option>`).join('')}`; }
 function mappedCard(row) { const read = key => { const index = Number(state.importDraft.defaults[key]); return index >= 0 ? String(row.cells[index] || '') : ''; }; return { front: read('front'), back: read('back'), tags: cleanTags(read('tags')), notes: read('notes'), hint: read('hint') }; }
+function mappedDeckMetadata(row) { const read = key => { const index = Number(state.importDraft?.deckMetadata?.[key]); return index >= 0 ? String(row.cells[index] || '').trim() : ''; }; return { subject: read('subject'), domain: read('domain'), language: RecallMetadata.normaliseLanguage({ code: read('languageCode'), name: read('languageName') }), tags: cleanTags(read('tags')) }; }
+const IMPORT_FIELDS = ['front', 'back', 'gender', 'partOfSpeech', 'notes', 'hint', 'alternatives'];
+const IMPORT_FIELD_LABELS = { front: 'Word / first side', back: 'Definition / second side', gender: 'Gender', partOfSpeech: 'Part of speech', notes: 'Notes', hint: 'Hint', alternatives: 'Accepted alternatives' };
+function importRead(row, key, draft = state.importDraft) {
+  if (Object.hasOwn(row.overrides || {}, key)) return String(row.overrides[key] || '');
+  const index = Number(draft.defaults?.[key]); return index >= 0 ? String(row.cells[index] || '') : '';
+}
+function importMappedCard(row, draft = state.importDraft) {
+  const rawWord = importRead(row, 'front', draft); const explicitGender = importRead(row, 'gender', draft);
+  const detection = RecallMetadata.wordInfoFromImport(rawWord, explicitGender, row.genderCorrection || 'auto');
+  return { front: detection.cleanWord, back: importRead(row, 'back', draft).trim(), notes: importRead(row, 'notes', draft).trim(), hint: importRead(row, 'hint', draft).trim(), acceptedAnswers: cleanTags(importRead(row, 'alternatives', draft)), wordInfo: { ...detection.wordInfo, partOfSpeech: importRead(row, 'partOfSpeech', draft).trim() || detection.wordInfo.partOfSpeech }, importWarning: detection.warning };
+}
+function importDestination() { const id = state.importDraft?.destination || 'active'; return id === 'new' ? null : id === 'active' ? activeSet() : state.sets.find(set => set.id === id); }
+function importMetadataDefaults(draft) {
+  if (draft.metadata) return draft.metadata;
+  const imported = draft.rows[0] ? mappedDeckMetadata(draft.rows[0]) : {};
+  const current = importDestination() || activeSet();
+  draft.metadata = { name: draft.deckName || '', subject: imported.subject || current?.subject || 'General', domain: RecallMetadata.normaliseDomain(imported.domain || current?.domain || 'other'), language: imported.language || current?.language || null, tags: cleanTags(imported.tags || current?.tags || []), updateExisting: false };
+  return draft.metadata;
+}
+function importColumnOptions(selected, draft) { return `<option value="-1">Ignore column</option>${draft.headers.map((header, index) => `<option value="${index}" ${Number(selected) === index ? 'selected' : ''}>${escapeHtml(header)}</option>`).join('')}`; }
+function renderImportFlow() {
+  const draft = state.importDraft; if (!draft) return;
+  draft.rows.forEach(row => { row.overrides ||= {}; });
+  const metadata = importMetadataDefaults(draft); const destination = importDestination(); const editableMetadata = !destination || metadata.updateExisting;
+  const destinationOptions = `<option value="active">Current deck: ${escapeHtml(activeSet()?.name || 'None')}</option><option value="new">Create a new deck</option>${state.sets.map(set => `<option value="${set.id}" ${draft.destination === set.id ? 'selected' : ''}>${escapeHtml(set.name)}</option>`).join('')}`;
+  const languageValue = metadata.language?.code || '';
+  const mapping = IMPORT_FIELDS.map(key => `<label>${IMPORT_FIELD_LABELS[key]}<select data-import-map="${key}">${importColumnOptions(draft.defaults?.[key], draft)}</select></label>`).join('');
+  const validRows = draft.rows.filter(row => row.include && importMappedCard(row, draft).front && importMappedCard(row, draft).back);
+  const duplicateRows = validRows.filter(row => destination && findDuplicate(importMappedCard(row, draft), destination.cards));
+  const rowMarkup = draft.rows.map(row => {
+    const card = importMappedCard(row, draft); const missing = !card.front || !card.back; const duplicate = !missing && destination && findDuplicate(card, destination.cards);
+    const gender = card.wordInfo.gender; const status = missing ? 'Missing word or definition' : duplicate ? 'Duplicate in destination' : card.importWarning || (gender !== 'unknown' ? `Gender detected: ${gender}` : 'Ready');
+    return `<article class="import-card-row ${!row.include ? 'excluded' : ''} ${missing ? 'invalid' : ''}"><label class="import-include"><input type="checkbox" data-import-include="${row.id}" ${row.include ? 'checked' : ''}/><span>Include</span></label><span class="import-row-number">${escapeHtml(row.sourceRow)}</span><input data-import-edit="front" data-import-row="${row.id}" value="${escapeHtml(card.front)}" aria-label="Word" placeholder="Word"/><input data-import-edit="back" data-import-row="${row.id}" value="${escapeHtml(card.back)}" aria-label="Definition" placeholder="Definition"/><select data-import-gender="${row.id}" aria-label="Gender"><option value="auto" ${!row.genderCorrection || row.genderCorrection === 'auto' ? 'selected' : ''}>${gender === 'unknown' ? 'No gender detected' : gender}</option><option value="none" ${row.genderCorrection === 'none' ? 'selected' : ''}>Remove gender</option>${RecallMetadata.GENDERS.filter(value => !['unknown', 'not_applicable'].includes(value)).map(value => `<option value="${value}" ${row.genderCorrection === value ? 'selected' : ''}>${value}</option>`).join('')}</select><span class="import-pos">${escapeHtml(card.wordInfo.partOfSpeech || '-')}</span><small>${escapeHtml(status)}</small></article>`;
+  }).join('');
+  elements.importPreview.innerHTML = `<section class="import-flow" role="dialog" aria-modal="true" aria-labelledby="importFlowTitle"><header class="import-flow-head"><div><p class="eyebrow">Safe import</p><h3 id="importFlowTitle">Import cards</h3><p>Review the deck, column mapping, and cards before anything changes.</p></div><button class="drawer-close" type="button" data-import-action="close" aria-label="Close import">&times;</button></header><section class="import-stage"><div class="import-stage-title"><b>1</b><div><h4>Destination and deck information</h4><p>Tags belong to the deck, never individual cards.</p></div></div><div class="import-destination-grid"><label>Destination<select id="importFlowDestination">${destinationOptions}</select></label><label>Deck name<input id="importFlowDeckName" value="${escapeHtml(metadata.name)}" ${destination ? 'disabled' : ''} placeholder="Imported deck" /></label>${destination ? `<label class="import-update-meta"><input id="importFlowUpdateMetadata" type="checkbox" ${metadata.updateExisting ? 'checked' : ''}/><span>Update this deck's metadata</span></label><p class="import-existing-meta">Current: ${escapeHtml(destination.subject)} - ${escapeHtml(destination.domain)}${destination.language ? ` - ${escapeHtml(destination.language.name)}` : ''}</p>` : ''}<label>Subject<input id="importFlowSubject" value="${escapeHtml(metadata.subject)}" ${editableMetadata ? '' : 'disabled'} /></label><label>Domain<select id="importFlowDomain" ${editableMetadata ? '' : 'disabled'}>${RecallMetadata.DOMAIN_OPTIONS.map(domain => `<option value="${domain}" ${metadata.domain === domain ? 'selected' : ''}>${escapeHtml(domain)}</option>`).join('')}</select></label><label>Language<select id="importFlowLanguage" ${editableMetadata ? '' : 'disabled'}><option value="">No language</option>${RecallMetadata.LANGUAGES.map(language => `<option value="${language.code}" ${languageValue === language.code ? 'selected' : ''}>${language.name}</option>`).join('')}<option value="custom" ${languageValue === 'custom' ? 'selected' : ''}>Custom</option></select></label><label>Deck tags<input id="importFlowTags" value="${escapeHtml(metadata.tags.join(', '))}" ${editableMetadata ? '' : 'disabled'} placeholder="e.g. language, beginner" /></label></div></section><section class="import-stage"><div class="import-stage-title"><b>2</b><div><h4>Column mapping</h4><p>Map the source columns you want to use. Unused columns are ignored.</p></div></div><div class="import-mapping-grid">${mapping}</div></section><section class="import-stage import-review-stage"><div class="import-stage-title"><b>3</b><div><h4>Review cards</h4><p>${validRows.length} valid card${validRows.length === 1 ? '' : 's'} ready; ${duplicateRows.length} duplicate warning${duplicateRows.length === 1 ? '' : 's'}. Word metadata, notes, hints, and accepted alternatives will be imported.</p></div><label>Duplicates<select id="importFlowDuplicates"><option value="skip">Skip</option><option value="keep">Keep</option><option value="replace">Replace</option></select></label></div><div class="import-card-table" role="region" aria-label="Cards to import" tabindex="0"><div class="import-card-header"><span>Include</span><span>Row</span><span>Word</span><span>Definition</span><span>Gender</span><span>Part of speech</span><span>Status</span></div>${rowMarkup}</div></section><footer class="import-flow-footer"><button class="dialog-cancel" type="button" data-import-action="close">Cancel</button><p>Cards keep their own notes, hints, alternatives, and word metadata. Deck tags and language settings stay at deck level.</p><button class="primary-button" type="button" data-import-action="confirm">Import ${validRows.length} cards</button></footer></section>`;
+  elements.importPreview.hidden = false;
+}
 function renderImportPreview() {
+  renderImportFlow(); return;
   const draft = state.importDraft; if (!draft) return;
   elements.shareImportModeWrap.hidden = draft.kind !== 'share';
   elements.mapFront.innerHTML = mappingOptions(draft.defaults.front); elements.mapBack.innerHTML = mappingOptions(draft.defaults.back); elements.mapTags.innerHTML = mappingOptions(draft.defaults.tags); elements.mapNotes.innerHTML = mappingOptions(draft.defaults.notes); elements.mapHint.innerHTML = mappingOptions(draft.defaults.hint);
@@ -626,31 +717,65 @@ function renderImportPreview() {
 }
 function closeImportPreview() { elements.importPreview.hidden = true; state.importDraft = null; }
 function csvEscape(value, delimiter) { const text = String(value ?? ''); return text.includes('"') || text.includes(delimiter) || /[\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
-function deckToDelimited(set, delimiter) { return [EXPORT_COLUMNS, ...set.cards.map(card => [card.front, card.back, card.tags.join(', '), card.notes, card.hint, card.flagged, card.state, card.missed, card.correctStreak, card.reviewCount])].map(row => row.map(value => csvEscape(value, delimiter)).join(delimiter)).join('\r\n'); }
+function deckToDelimited(set, delimiter) { return [EXPORT_COLUMNS, ...set.cards.map(card => [card.front, card.back, set.subject, set.domain, set.language?.code || '', set.language?.name || '', set.tags.join(', '), card.notes, card.hint, card.flagged, card.state, card.missed, card.correctStreak, card.reviewCount, card.wordInfo?.gender || 'unknown', card.wordInfo?.originalMarker || '', card.wordInfo?.partOfSpeech || '', (card.acceptedAnswers || []).join(', ')])].map(row => row.map(value => csvEscape(value, delimiter)).join(delimiter)).join('\r\n'); }
 function downloadLocalFile(name, content, type) { const url = URL.createObjectURL(new Blob([content], { type })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 function exportDeck(delimiter) { const set = activeSet(); if (!set) return; const ext = delimiter === '\t' ? 'tsv' : 'csv'; downloadLocalFile(`${set.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'deck'}.${ext}`, deckToDelimited(set, delimiter), delimiter === '\t' ? 'text/tab-separated-values' : 'text/csv'); showToast(`${set.name} exported as ${ext.toUpperCase()}.`); }
-function exportShare() { const ids = [...elements.shareDeckOptions.querySelectorAll('input:checked')].map(input => input.value); const sets = state.sets.filter(set => ids.includes(set.id)); if (!sets.length) return showToast('Choose at least one deck to share.'); const folderIds = new Set(sets.map(set => set.folderId).filter(Boolean)); const payload = { format: 'recall-share-v1', exportedAt: new Date().toISOString(), folders: state.folders.filter(folder => folderIds.has(folder.id)), sets: sets.map(set => ({ ...set, cards: set.cards.map(({ front, back, tags, notes, hint, flagged, state: cardState, missed, correctStreak, reviewCount }) => ({ front, back, tags, notes, hint, flagged, state: cardState, missed, correctStreak, reviewCount })) })) }; downloadLocalFile('recall-decks.recall', JSON.stringify(payload, null, 2), 'application/json'); showToast(`${sets.length} deck${sets.length === 1 ? '' : 's'} exported without session history.`); }
+function exportShare() { const ids = [...elements.shareDeckOptions.querySelectorAll('input:checked')].map(input => input.value); const sets = state.sets.filter(set => ids.includes(set.id)); if (!sets.length) return showToast('Choose at least one deck to share.'); const folderIds = new Set(sets.map(set => set.folderId).filter(Boolean)); const payload = { format: 'recall-share-v2', exportedAt: new Date().toISOString(), folders: state.folders.filter(folder => folderIds.has(folder.id)), sets: sets.map(set => ({ ...set, cards: set.cards.map(({ front, back, notes, hint, flagged, state: cardState, missed, correctStreak, reviewCount, wordInfo, acceptedAnswers }) => ({ front, back, notes, hint, flagged, state: cardState, missed, correctStreak, reviewCount, wordInfo, acceptedAnswers })) })) }; downloadLocalFile('recall-decks.recall', JSON.stringify(payload, null, 2), 'application/json'); showToast(`${sets.length} deck${sets.length === 1 ? '' : 's'} exported without session history.`); }
 function selectedCards() { return activeCards().filter(card => state.selectedCardIds.has(card.id)); }
-function openCardEditor(id) { const card = activeCards().find(item => item.id === id); if (!card) return; state.editingCardId = id; elements.editFront.value = card.front; elements.editBack.value = card.back; elements.editTags.value = card.tags.join(', '); elements.editHint.value = card.hint; elements.editNotes.value = card.notes; elements.cardEditor.hidden = false; setTimeout(() => elements.editFront.focus(), 0); }
+function openCardEditor(id) { const card = activeCards().find(item => item.id === id); if (!card) return; state.editingCardId = id; elements.editFront.value = card.front; elements.editBack.value = card.back; elements.editTags.value = activeSet().tags.join(', '); elements.editHint.value = card.hint; elements.editNotes.value = card.notes; $('#editGenderInput').value = card.wordInfo?.gender || 'unknown'; $('#editPartOfSpeechInput').value = card.wordInfo?.partOfSpeech || ''; $('#editAlternativesInput').value = (card.acceptedAnswers || []).join(', '); elements.cardEditor.hidden = false; setTimeout(() => elements.editFront.focus(), 0); }
 function closeCardEditor() { elements.cardEditor.hidden = true; state.editingCardId = null; }
-function allTags() { return Array.from(new Set(state.sets.flatMap(set => [...cleanTags(set.tags), ...set.cards.flatMap(card => card.tags)]))).sort((a, b) => a.localeCompare(b)); }
-function renderTagManager() { const tags = allTags(); elements.tagDialogList.innerHTML = tags.length ? tags.map(tag => `<div><span>${escapeHtml(tag)}</span><button type="button" data-rename-tag="${escapeHtml(tag)}">Rename</button><button type="button" data-delete-tag="${escapeHtml(tag)}">Delete</button></div>`).join('') : '<p class="attempts-empty">No tags yet. Add one to a card or create it here.</p>'; }
+function allTags() { return cleanTags(state.sets.flatMap(set => set.tags)).sort((a, b) => a.localeCompare(b)); }
+function renderTagManager() { const tags = allTags(); elements.tagDialogList.innerHTML = tags.length ? tags.map(tag => `<div><span>${escapeHtml(tag)}</span><button type="button" data-rename-tag="${escapeHtml(tag)}">Rename</button><button type="button" data-delete-tag="${escapeHtml(tag)}">Delete</button></div>`).join('') : '<p class="attempts-empty">No deck tags yet. Add them in Deck details.</p>'; }
 function openTagManager() { renderTagManager(); elements.tagDialog.hidden = false; }
 function closeTagManager() { elements.tagDialog.hidden = true; }
-function renameTag(from, to) { const next = String(to || '').trim(); if (!next || next === from) return; state.sets.forEach(set => set.cards.forEach(card => { card.tags = card.tags.map(tag => tag === from ? next : tag); })); state.selectedTags = state.selectedTags.map(tag => tag === from ? next : tag); save(); render(); renderTagManager(); }
-function deleteTag(tag) { state.sets.forEach(set => set.cards.forEach(card => { card.tags = card.tags.filter(item => item !== tag); })); state.selectedTags = state.selectedTags.filter(item => item !== tag); save(); render(); renderTagManager(); }
-function createSetForImport(name) { const set = { id: makeId(), name: name || `Imported set ${state.sets.length + 1}`, folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: state.sets.length, createdAt: Date.now(), cards: [] }; state.sets.push(set); return set; }
+function renameTag(from, to) { const next = String(to || '').trim(); if (!next || next.toLocaleLowerCase() === from.toLocaleLowerCase()) return; state.sets.forEach(set => { set.tags = cleanTags(set.tags.map(tag => tag.toLocaleLowerCase() === from.toLocaleLowerCase() ? next : tag)); }); state.selectedTags = state.selectedTags.map(tag => tag.toLocaleLowerCase() === from.toLocaleLowerCase() ? next : tag); save(); render(); renderTagManager(); }
+function deleteTag(tag) { state.sets.forEach(set => { set.tags = set.tags.filter(item => item.toLocaleLowerCase() !== tag.toLocaleLowerCase()); }); state.selectedTags = state.selectedTags.filter(item => item.toLocaleLowerCase() !== tag.toLocaleLowerCase()); save(); render(); renderTagManager(); }
+function createSetForImport(name) { const set = normaliseDeck({ id: makeId(), name: name || `Imported set ${state.sets.length + 1}`, subject: 'General', domain: 'other', tags: [], folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: state.sets.length, createdAt: Date.now(), cards: [] }); state.sets.push(set); return set; }
+function applyImportMetadata(set, metadata) {
+  set.subject = String(metadata.subject || 'General').trim() || 'General';
+  set.domain = RecallMetadata.normaliseDomain(metadata.domain);
+  set.language = set.domain === 'language' ? RecallMetadata.normaliseLanguage(metadata.language) : null;
+  set.tags = cleanTags(metadata.tags || []);
+  set.primarySubject = set.subject;
+}
+function confirmImportFlow() {
+  const draft = state.importDraft; if (!draft) return;
+  if (draft.kind === 'share') {
+    const duplicateMode = $('#importFlowDuplicates')?.value || 'skip'; let imported = 0;
+    const foldersByName = new Map(state.folders.map(folder => [folder.name, folder]));
+    (draft.sets || []).forEach(sourceSet => {
+      let destination = state.sets.find(set => set.name === sourceSet.name);
+      if (!destination) { destination = createSetForImport(sourceSet.name); applyImportMetadata(destination, { subject: sourceSet.subject, domain: sourceSet.domain, language: sourceSet.language, tags: sourceSet.tags }); destination.frontLabel = sourceSet.frontLabel || 'First side'; destination.backLabel = sourceSet.backLabel || 'Second side'; const sourceFolder = draft.folders?.find(folder => folder.id === sourceSet.folderId); if (sourceFolder) { let folder = foldersByName.get(sourceFolder.name); if (!folder) { folder = { id: makeId(), name: sourceFolder.name, color: sourceFolder.color || FOLDER_COLORS[state.folders.length % FOLDER_COLORS.length], order: state.folders.length }; state.folders.push(folder); foldersByName.set(folder.name, folder); } destination.folderId = folder.id; } }
+      imported += addCards((sourceSet.cards || []).map(card => ({ ...card })), duplicateMode, destination);
+    });
+    save(); buildQueue(); closeImportPreview(); showToast(`${imported} shared card${imported === 1 ? '' : 's'} imported.`); return;
+  }
+  const metadata = importMetadataDefaults(draft); let destination = importDestination();
+  if (!destination) {
+    const name = String(metadata.name || '').trim(); if (!name) return showToast('Give the new deck a name first.');
+    destination = createSetForImport(name); applyImportMetadata(destination, metadata);
+  } else if (metadata.updateExisting) {
+    const next = { subject: String(metadata.subject || '').trim(), domain: RecallMetadata.normaliseDomain(metadata.domain), language: RecallMetadata.normaliseLanguage(metadata.language), tags: cleanTags(metadata.tags) };
+    const changed = next.subject !== destination.subject || next.domain !== destination.domain || JSON.stringify(next.language) !== JSON.stringify(destination.language) || JSON.stringify(next.tags) !== JSON.stringify(destination.tags);
+    if (changed && !confirm(`Update metadata for ${destination.name}? Existing deck information will be replaced.`)) return;
+    if (changed) applyImportMetadata(destination, metadata);
+  }
+  const cards = draft.rows.filter(row => row.include).map(row => importMappedCard(row, draft)).filter(card => card.front && card.back);
+  const imported = addCards(cards, $('#importFlowDuplicates')?.value || 'skip', destination);
+  closeImportPreview(); elements.importInput.value = ''; elements.importStatus.textContent = `${imported} card${imported === 1 ? '' : 's'} imported to ${destination.name}.`; showToast(`${imported} card${imported === 1 ? '' : 's'} imported.`);
+}
 function confirmImportPreview() {
+  confirmImportFlow(); return;
   const draft = state.importDraft; if (!draft) return; const rows = draft.rows.filter(row => row.include).map(row => ({ row, card: mappedCard(row) })).filter(item => item.card.front && item.card.back); const duplicateMode = elements.duplicateMode.value;
   if (draft.kind === 'share') {
     const shareMode = elements.shareImportMode.value; let imported = 0; const foldersByName = new Map(state.folders.map(folder => [folder.name, folder]));
-    draft.sets.forEach(sourceSet => { let destination = state.sets.find(set => set.name === sourceSet.name); if (shareMode === 'skip' && destination) return; if (shareMode === 'copy' || !destination) { destination = createSetForImport(shareMode === 'copy' && state.sets.some(set => set.name === sourceSet.name) ? `${sourceSet.name} copy` : sourceSet.name); destination.frontLabel = sourceSet.frontLabel || 'First side'; destination.backLabel = sourceSet.backLabel || 'Second side'; const sourceFolder = draft.folders.find(folder => folder.id === sourceSet.folderId); if (sourceFolder) { let folder = foldersByName.get(sourceFolder.name); if (!folder) { folder = { id: makeId(), name: sourceFolder.name, color: sourceFolder.color || FOLDER_COLORS[state.folders.length % FOLDER_COLORS.length], order: state.folders.length }; state.folders.push(folder); foldersByName.set(folder.name, folder); } destination.folderId = folder.id; } }
+    draft.sets.forEach(sourceSet => { let destination = state.sets.find(set => set.name === sourceSet.name); if (shareMode === 'skip' && destination) return; if (shareMode === 'copy' || !destination) { destination = createSetForImport(shareMode === 'copy' && state.sets.some(set => set.name === sourceSet.name) ? `${sourceSet.name} copy` : sourceSet.name); destination.frontLabel = sourceSet.frontLabel || 'First side'; destination.backLabel = sourceSet.backLabel || 'Second side'; destination.subject = sourceSet.subject || destination.subject; destination.domain = RecallMetadata.normaliseDomain(sourceSet.domain || destination.domain); destination.language = destination.domain === 'language' ? RecallMetadata.normaliseLanguage(sourceSet.language) : null; destination.tags = cleanTags(sourceSet.tags); const sourceFolder = draft.folders.find(folder => folder.id === sourceSet.folderId); if (sourceFolder) { let folder = foldersByName.get(sourceFolder.name); if (!folder) { folder = { id: makeId(), name: sourceFolder.name, color: sourceFolder.color || FOLDER_COLORS[state.folders.length % FOLDER_COLORS.length], order: state.folders.length }; state.folders.push(folder); foldersByName.set(sourceFolder.name, folder); } destination.folderId = folder.id; } }
       const cards = rows.filter(item => item.row.sourceSet === sourceSet.name).map(item => ({ ...item.card, ...item.row.original })); imported += addCards(cards, duplicateMode, destination);
     });
     save(); buildQueue(); closeImportPreview(); showToast(`${imported} shared card${imported === 1 ? '' : 's'} imported.`); return;
   }
   let destination = elements.importDestination.value === 'active' ? activeSet() : state.sets.find(set => set.id === elements.importDestination.value);
-  if (elements.importDestination.value === 'new') { const name = prompt('Name the new deck:', 'Imported deck'); if (!name) return; destination = createSetForImport(name.trim()); }
+  if (elements.importDestination.value === 'new') { const name = prompt('Name the new deck:', 'Imported deck'); if (!name) return; destination = createSetForImport(name.trim()); const metadata = rows[0] ? mappedDeckMetadata(rows[0].row) : null; if (metadata) { destination.subject = metadata.subject || destination.subject; destination.domain = RecallMetadata.normaliseDomain(metadata.domain || (metadata.language ? 'language' : destination.domain)); destination.language = destination.domain === 'language' ? metadata.language : null; destination.tags = cleanTags([...(destination.tags || []), ...metadata.tags]); } }
   const imported = addCards(rows.map(item => item.card), duplicateMode, destination); closeImportPreview(); elements.importInput.value = ''; elements.importStatus.textContent = `${imported} card${imported === 1 ? '' : 's'} imported to ${destination.name}.`; showToast(`${imported} card${imported === 1 ? '' : 's'} imported.`);
 }
 
@@ -667,21 +792,25 @@ function openLibraryDialog(action, currentName = '') {
   elements.dialogEyebrow.textContent = creating ? 'Add to library' : 'Edit library item';
   elements.dialogTitle.textContent = `${creating ? 'Create' : 'Rename'} ${noun}`;
   elements.dialogLabel.firstChild.textContent = `Name `;
+  // The rename input must remain an ordinary text field: study shortcuts and
+  // menu handlers should never steal focus or consume its keystrokes.
+  elements.dialogInput.disabled = false;
+  elements.dialogInput.readOnly = false;
   elements.dialogInput.value = currentName;
   elements.dialog.hidden = false;
-  setTimeout(() => { elements.dialogInput.focus(); elements.dialogInput.select(); }, 0);
+  requestAnimationFrame(() => { elements.dialogInput.focus({ preventScroll: true }); elements.dialogInput.select(); });
 }
 function closeLibraryDialog() { elements.dialog.hidden = true; libraryDialogAction = null; }
 
 let toastTimer;
 function showToast(message) { elements.toast.textContent = message; elements.toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => elements.toast.classList.remove('show'), 2600); }
 
-$('#addCardForm').addEventListener('submit', event => { event.preventDefault(); const card = { front: elements.frontInput.value, back: elements.backInput.value, tags: cleanTags(elements.tagsInput.value), hint: elements.hintInput.value, notes: elements.notesInput.value }; const duplicate = findDuplicate(card); if (duplicate && !confirm('A card with the same two sides already exists. Keep another copy?')) return; const added = addCards([card]); if (added) { elements.frontInput.value = ''; elements.backInput.value = ''; elements.tagsInput.value = ''; elements.hintInput.value = ''; elements.notesInput.value = ''; elements.frontInput.focus(); showToast('Flashcard added to your deck.'); } });
+$('#addCardForm').addEventListener('submit', event => { event.preventDefault(); const set = activeSet(); set.tags = cleanTags([...(set.tags || []), ...cleanTags(elements.tagsInput.value)]); const card = { front: elements.frontInput.value, back: elements.backInput.value, hint: elements.hintInput.value, notes: elements.notesInput.value }; const duplicate = findDuplicate(card); if (duplicate && !confirm('A card with the same two sides already exists. Keep another copy?')) return; const added = addCards([card]); if (added) { elements.frontInput.value = ''; elements.backInput.value = ''; elements.tagsInput.value = ''; elements.hintInput.value = ''; elements.notesInput.value = ''; elements.frontInput.focus(); showToast('Flashcard added to your deck.'); } });
 $('#saveLabelsBtn').addEventListener('click', () => { const set = activeSet(); if (!set) return; set.frontLabel = elements.frontLabelInput.value.trim() || 'First side'; set.backLabel = elements.backLabelInput.value.trim() || 'Second side'; save(); render(); showToast('Side names saved for this study set.'); });
 $('#importBtn').addEventListener('click', () => { const cards = parseList(elements.importInput.value, elements.importFormat.value); if (cards.length) openImportPreview(cards, ['First side', 'Second side']); else elements.importStatus.textContent = 'No pairs found. Choose a separator preset or try “Two lines = one card”.'; });
 elements.card.addEventListener('click', event => { if (event.target.closest('button, input, form')) return; flip(); }); elements.correct.addEventListener('click', () => review('correct')); elements.retry.addEventListener('click', () => review('retry'));
 elements.flag.addEventListener('click', () => { const card = currentCard(); if (!card || state.animating) return; card.flagged = !card.flagged; save(); render(); showToast(card.flagged ? 'Card flagged for later.' : 'Flag removed.'); });
-elements.typedForm.addEventListener('submit', event => { event.preventDefault(); const card = currentCard(); if (!card || state.animating) return; if (state.typedChecked) { review(state.typedChecked.accepted ? 'correct' : 'retry'); return; } const showFront = state.flipped ? state.startSide !== 'front' : state.startSide === 'front'; const expected = showFront ? card.back : card.front; state.typedChecked = { accepted: answersMatch(elements.typedInput.value, expected) }; render(); });
+elements.typedForm.addEventListener('submit', event => { event.preventDefault(); const card = currentCard(); if (!card || state.animating) return; if (state.typedChecked) { review(state.typedChecked.accepted ? 'correct' : 'retry'); return; } const showFront = state.flipped ? state.startSide !== 'front' : state.startSide === 'front'; const expected = showFront ? card.back : card.front; const evaluation = RecallMetadata.evaluateTypedAnswer(elements.typedInput.value, expected, card.acceptedAnswers); state.typedChecked = { accepted: evaluation.accepted, classification: evaluation.classification, expected }; render(); });
 elements.undo.addEventListener('click', undoReview); elements.fullscreen.addEventListener('click', enterFocus); elements.exitFocus.addEventListener('click', exitFocus);
 document.querySelectorAll('.segment').forEach(button => button.addEventListener('click', () => { state.startSide = button.dataset.side; state.flipped = false; document.querySelectorAll('.segment').forEach(item => item.classList.toggle('active', item === button)); render(); }));
 function closeSessionMenu() { elements.sessionMenu.hidden = true; elements.sessionMenuBtn.setAttribute('aria-expanded', 'false'); }
@@ -715,13 +844,39 @@ elements.exportDeck.addEventListener('click', () => exportDeck(',')); elements.e
 elements.shareDeckOptions.addEventListener('change', () => { elements.shareDeckSummary.textContent = `${elements.shareDeckOptions.querySelectorAll('input:checked').length} selected`; });
 elements.manageTags.addEventListener('click', openTagManager); elements.tagDialogClose.addEventListener('click', closeTagManager); elements.newTag.addEventListener('click', () => { const tag = prompt('Name the new tag:'); if (!tag) return; const name = tag.trim(); if (!name || allTags().includes(name)) return; const card = activeCards()[0]; if (card) { card.tags = cleanTags([...card.tags, name]); save(); render(); } else showToast('Create a card first, then assign this tag.'); renderTagManager(); });
 elements.tagDialogList.addEventListener('click', event => { const rename = event.target.dataset.renameTag; const remove = event.target.dataset.deleteTag; if (rename) renameTag(rename, prompt('Rename tag:', rename)); if (remove && confirm(`Delete the “${remove}” tag from all cards?`)) deleteTag(remove); });
+elements.newTag.addEventListener('click', event => { event.stopImmediatePropagation(); const tag = prompt('Name the new deck tag:'); if (!tag) return; activeSet().tags = cleanTags([...(activeSet().tags || []), tag]); save(); render(); renderTagManager(); }, true);
+elements.tagDialogList.addEventListener('click', event => { const rename = event.target.dataset.renameTag; const remove = event.target.dataset.deleteTag; if (!rename && !remove) return; event.stopImmediatePropagation(); if (rename) renameTag(rename, prompt('Rename deck tag:', rename)); if (remove && confirm(`Delete the “${remove}” tag from all decks?`)) deleteTag(remove); }, true);
 elements.cardEditorCancel.addEventListener('click', closeCardEditor); elements.cardEditor.addEventListener('click', event => { if (event.target === elements.cardEditor) closeCardEditor(); });
-elements.cardEditorForm.addEventListener('submit', event => { event.preventDefault(); const card = activeCards().find(item => item.id === state.editingCardId); if (!card) return closeCardEditor(); const next = { front: elements.editFront.value.trim(), back: elements.editBack.value.trim(), tags: cleanTags(elements.editTags.value), hint: elements.editHint.value.trim(), notes: elements.editNotes.value.trim() }; if (!next.front || !next.back) return; const duplicate = findDuplicate(next, activeCards().filter(item => item.id !== card.id)); if (duplicate && !confirm('Another card has the same sides. Save anyway?')) return; Object.assign(card, next); save(); closeCardEditor(); buildQueue(); showToast('Card details saved.'); });
-elements.fileImport.addEventListener('change', async () => { const file = elements.fileImport.files[0]; if (!file) return; const text = await file.text(); try { const parsed = JSON.parse(text); if (parsed?.format === 'recall-share-v1') openSharePreview(parsed); else throw new Error('not share'); } catch { const delimiter = file.name.toLocaleLowerCase().endsWith('.tsv') ? '\t' : ','; const rows = parseDelimited(text, delimiter); if (rows.length > 1) { state.importDraft = rowsToImportDraft(rows); renderImportPreview(); elements.importPreview.hidden = false; } else showToast('That file has no importable rows.'); } elements.fileImport.value = ''; });
+elements.cardEditorForm.addEventListener('submit', event => { event.preventDefault(); const card = activeCards().find(item => item.id === state.editingCardId); if (!card) return closeCardEditor(); const extracted = RecallMetadata.extractWordInfo(elements.editFront.value.trim(), { ...card.wordInfo, gender: $('#editGenderInput').value, partOfSpeech: $('#editPartOfSpeechInput').value }); const next = { front: extracted.cleanWord, back: elements.editBack.value.trim(), hint: elements.editHint.value.trim(), notes: elements.editNotes.value.trim(), acceptedAnswers: cleanTags($('#editAlternativesInput').value), wordInfo: { ...extracted.wordInfo, language: activeSet().language } }; if (!next.front || !next.back) return; const duplicate = findDuplicate(next, activeCards().filter(item => item.id !== card.id)); if (duplicate && !confirm('Another card has the same sides. Save anyway?')) return; activeSet().tags = cleanTags(elements.editTags.value); Object.assign(card, next); save(); closeCardEditor(); buildQueue(); showToast('Card details saved.'); });
+elements.fileImport.addEventListener('change', async () => { const file = elements.fileImport.files[0]; if (!file) return; const text = await file.text(); try { const parsed = JSON.parse(text); if (/^recall-share-v[12]$/.test(parsed?.format || '')) openSharePreview(parsed); else throw new Error('not share'); } catch { const delimiter = file.name.toLocaleLowerCase().endsWith('.tsv') ? '\t' : ','; const rows = parseDelimited(text, delimiter); if (rows.length > 1) { state.importDraft = rowsToImportDraft(rows); renderImportPreview(); elements.importPreview.hidden = false; } else showToast('That file has no importable rows.'); } elements.fileImport.value = ''; });
 ['mapFront', 'mapBack', 'mapTags', 'mapNotes', 'mapHint'].forEach(key => elements[key].addEventListener('change', () => { state.importDraft.defaults[key.replace('map', '').toLowerCase()] = Number(elements[key].value); renderImportPreview(); }));
 elements.importPreviewRows.addEventListener('change', event => { const row = state.importDraft?.rows.find(item => item.id === event.target.dataset.importInclude); if (row) { row.include = event.target.checked; renderImportPreview(); } });
 elements.importPreviewRows.addEventListener('change', event => { const row = state.importDraft?.rows.find(item => item.id === event.target.dataset.importRow); if (!row) return; const field = event.target.dataset.importEdit; const index = state.importDraft.defaults[field]; if (index >= 0) row.cells[index] = event.target.value; renderImportPreview(); });
 elements.importPreviewClose.addEventListener('click', closeImportPreview); elements.importPreviewCancel.addEventListener('click', closeImportPreview); elements.confirmImport.addEventListener('click', confirmImportPreview);
+elements.importPreview.addEventListener('click', event => {
+  const action = event.target.closest('[data-import-action]')?.dataset.importAction;
+  if (action === 'close') closeImportPreview();
+  if (action === 'confirm') confirmImportFlow();
+});
+elements.importPreview.addEventListener('change', event => {
+  const draft = state.importDraft; if (!draft) return;
+  const map = event.target.dataset.importMap;
+  if (map) { draft.defaults[map] = Number(event.target.value); renderImportPreview(); return; }
+  if (event.target.id === 'importFlowDestination') { draft.destination = event.target.value; draft.metadata = null; renderImportPreview(); return; }
+  const metadata = importMetadataDefaults(draft);
+  if (event.target.id === 'importFlowUpdateMetadata') { metadata.updateExisting = event.target.checked; renderImportPreview(); return; }
+  if (event.target.id === 'importFlowLanguage') { metadata.language = RecallMetadata.normaliseLanguage(event.target.value); return; }
+  if (event.target.id === 'importFlowDomain') { metadata.domain = event.target.value; return; }
+  const include = event.target.dataset.importInclude; if (include) { const row = draft.rows.find(item => item.id === include); if (row) { row.include = event.target.checked; renderImportPreview(); } return; }
+  const gender = event.target.dataset.importGender; if (gender) { const row = draft.rows.find(item => item.id === gender); if (row) { row.genderCorrection = event.target.value; renderImportPreview(); } return; }
+  const rowId = event.target.dataset.importRow; const field = event.target.dataset.importEdit; if (rowId && field) { const row = draft.rows.find(item => item.id === rowId); if (row) { row.overrides ||= {}; row.overrides[field] = event.target.value; renderImportPreview(); } }
+});
+elements.importPreview.addEventListener('input', event => {
+  const draft = state.importDraft; if (!draft) return; const metadata = importMetadataDefaults(draft);
+  if (event.target.id === 'importFlowDeckName') metadata.name = event.target.value;
+  if (event.target.id === 'importFlowSubject') metadata.subject = event.target.value;
+  if (event.target.id === 'importFlowTags') metadata.tags = cleanTags(event.target.value);
+});
 
 $('#libraryTrigger').addEventListener('click', openLibrary); $('#libraryClose').addEventListener('click', closeLibrary); elements.scrim.addEventListener('click', closeLibrary);
 $('#fullLibraryBtn').addEventListener('click', openFullLibrary); $('#fullLibraryClose').addEventListener('click', closeFullLibrary); $('#fullNewSetBtn').addEventListener('click', () => openLibraryDialog({ type: 'new-set' }, `New set ${state.sets.length + 1}`)); $('#fullNewFolderBtn').addEventListener('click', () => openLibraryDialog({ type: 'new-folder' }, `Folder ${state.folders.length + 1}`));
@@ -741,7 +896,7 @@ function moveFolder(folderId, direction) {
 function deleteSet(setId) {
   const set = state.sets.find(item => item.id === setId); if (!set) return;
   state.sets = state.sets.filter(item => item.id !== setId);
-  if (!state.sets.length) state.sets.push({ id: makeId(), name: 'My study deck', folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: [] });
+  if (!state.sets.length) state.sets.push(normaliseDeck({ id: makeId(), name: 'My study deck', subject: 'General', domain: 'other', tags: [], folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: [] }));
   if (state.activeSetId === setId) state.activeSetId = state.sets[0].id;
   save(); buildQueue(); renderLibrary(); showToast(`“${set.name}” deleted.`);
 }
@@ -796,7 +951,7 @@ function saveLibraryDialog() {
   if (!name || !action) return;
   closeLibraryDialog();
   if (action.type === 'new-set') {
-    const set = { id: makeId(), name, folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: state.sets.length, createdAt: Date.now(), cards: [] };
+    const set = normaliseDeck({ id: makeId(), name, subject: 'General', domain: 'other', tags: [], folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: state.sets.length, createdAt: Date.now(), cards: [] });
     state.sets.push(set); state.activeSetId = set.id; save(); buildQueue(); if (elements.fullLibrary.hidden) openLibrary(); else renderFullLibrary(); showToast('New study set created.'); return;
   }
   if (action.type === 'new-folder') {
@@ -808,6 +963,10 @@ function saveLibraryDialog() {
 }
 elements.dialogSave.addEventListener('click', saveLibraryDialog);
 elements.dialogForm.addEventListener('submit', event => { event.preventDefault(); saveLibraryDialog(); });
+elements.dialogInput.addEventListener('keydown', event => {
+  // Keep normal text entry isolated from the global study/keybind shortcuts.
+  event.stopPropagation();
+});
 
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) document.body.classList.remove('focus-study'); });
 document.addEventListener('keydown', event => { if (event.repeat) return; if (event.key === 'Escape' && !completionDialog.hidden) { event.preventDefault(); closeCompletionDialog(); return; } if (event.key === 'Escape' && !elements.dialog.hidden) { closeLibraryDialog(); return; } if (event.key === 'Escape' && !elements.cardEditor.hidden) { closeCardEditor(); return; } if (event.key === 'Escape' && !elements.tagDialog.hidden) { closeTagManager(); return; } if (event.key === 'Escape' && !elements.importPreview.hidden) { closeImportPreview(); return; } if (state.activeTest || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; if (event.key === 'Escape') { closeLibrary(); closeSessionMenu(); if (document.body.classList.contains('focus-study')) exitFocus(); return; } if (event.key.toLowerCase() === 'f') { event.preventDefault(); document.body.classList.contains('focus-study') ? exitFocus() : enterFocus(); return; } if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); flip(); return; } if (state.studyMode !== 'typed' && event.key === 'ArrowLeft') { event.preventDefault(); review('retry'); return; } if (state.studyMode !== 'typed' && event.key === 'ArrowRight') { event.preventDefault(); review('correct'); } });
@@ -826,7 +985,7 @@ testModeButton.id = 'testModeBtn'; testModeButton.className = 'test-trigger'; te
 $('#libraryTrigger').insertAdjacentElement('afterend', testModeButton);
 let testTimer = null;
 
-function testAllTags() { return Array.from(new Set(state.sets.flatMap(set => set.cards.flatMap(card => card.tags || [])))).sort((a, b) => a.localeCompare(b)); }
+function testAllTags() { return allTags(); }
 function testFormatDuration(ms) { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
 function testDeckChoices(selected = [activeSet()?.id]) {
   return state.sets.map(set => `<label class="test-check"><input data-test-deck type="checkbox" value="${set.id}" ${selected.includes(set.id) ? 'checked' : ''}/><span>${escapeHtml(set.name)}</span><small>${set.cards.length} cards</small></label>`).join('');
@@ -851,9 +1010,9 @@ function testSetupConfig() {
 function cardsForTest(config) {
   const deckIds = config.deckIds.length ? config.deckIds : [activeSet()?.id];
   const subset = state.pendingTestCardIds ? new Set(state.pendingTestCardIds) : null;
-  return state.sets.filter(set => deckIds.includes(set.id)).flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, frontLabel: sideNames(set).front, backLabel: sideNames(set).back }))).filter(card => {
+  return state.sets.filter(set => deckIds.includes(set.id)).flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, deckTags: set.tags, domain: set.domain, language: set.language, frontLabel: sideNames(set).front, backLabel: sideNames(set).back }))).filter(card => {
     if (subset && !subset.has(card.id)) return false;
-    const matchesTags = !config.tags.length || config.tags.every(tag => card.tags.includes(tag));
+    const matchesTags = !config.tags.length || config.tags.every(tag => card.deckTags.some(deckTag => deckTag.toLocaleLowerCase() === tag.toLocaleLowerCase()));
     const matchesFilter = config.filter === 'all' || (config.filter === 'new' && card.state === 'New') || (config.filter === 'learning' && card.state === 'Learning') || (config.filter === 'mastered' && card.state === 'Mastered') || (config.filter === 'missed' && card.missed) || (config.filter === 'flagged' && card.flagged);
     return matchesTags && matchesFilter;
   });
@@ -879,7 +1038,7 @@ function startTest() {
 }
 function activeTestQuestion() { return state.activeTest?.questions[state.activeTest.currentIndex]; }
 function testAnswerValue(question) { return state.activeTest.config.promptSide === 'front' ? question.back : question.front; }
-function testPromptValue(question) { return state.activeTest.config.promptSide === 'front' ? question.front : question.back; }
+function testPromptValue(question) { const side = state.activeTest.config.promptSide === 'front' ? 'front' : 'back'; return displayCardSide(question, side); }
 function renderTestQuestion() {
   const test = state.activeTest; const question = activeTestQuestion(); if (!test || !question) return finishTest();
   const promptName = test.config.promptSide === 'front' ? question.frontLabel : question.backLabel; const answerName = test.config.promptSide === 'front' ? question.backLabel : question.frontLabel;
@@ -952,10 +1111,32 @@ function applySubjectColour(subject, colour) { if (!/^#[0-9a-f]{6}$/i.test(colou
 function openTagManager() { renderTagManager(); if (!elements.tagDialog.querySelector('.subject-tag-help')) { const help = document.createElement('p'); help.className = 'subject-tag-help'; help.textContent = 'Tip: write Subject: Topic (for example Biology: Cells) to give decks subject-aware colour accents. Other tags work as normal.'; elements.tagDialogList.before(help); } elements.tagDialog.hidden = false; }
 function openCardEditor(id) { const card = activeCards().find(item => item.id === id); if (!card) return; state.editingCardId = id; elements.editFront.value = card.front; elements.editBack.value = card.back; elements.editTags.value = card.tags.join(', '); elements.editHint.value = card.hint; elements.editNotes.value = card.notes; const label = elements.editTags.closest('label'); if (label && !label.querySelector('.subject-tag-help')) { const help = document.createElement('small'); help.className = 'subject-tag-help'; help.textContent = 'Use Subject: Topic for subject colours, e.g. Biology: Cells.'; label.append(help); } elements.cardEditor.hidden = false; setTimeout(() => elements.editFront.focus(), 0); }
 deckSubjectButton.addEventListener('click', openDeckSubjectDialog); subjectColoursButton.addEventListener('click', renderSubjectColours);
+const deckMetadataDialog = document.createElement('div');
+deckMetadataDialog.className = 'library-dialog-backdrop'; deckMetadataDialog.hidden = true; deckMetadataDialog.id = 'deckMetadataDialog'; document.body.append(deckMetadataDialog);
+function renderDeckMetadataDialog() {
+  const deck = activeSet(); const language = deck.language || {};
+  deckMetadataDialog.innerHTML = `<form class="library-dialog subject-dialog" id="deckMetadataForm"><p class="eyebrow">Deck details</p><h3>${escapeHtml(deck.name)}</h3><label>Subject<input id="deckSubjectInput" required maxlength="100" value="${escapeHtml(deck.subject || 'General')}" placeholder="e.g. Biology" /></label><label>Domain<select id="deckDomainInput">${RecallMetadata.DOMAIN_OPTIONS.map(domain => `<option value="${domain}" ${deck.domain === domain ? 'selected' : ''}>${domain[0].toUpperCase() + domain.slice(1)}</option>`).join('')}</select></label><label>Language <small>only needed for language decks</small><select id="deckLanguageInput"><option value="">No language</option>${RecallMetadata.LANGUAGES.map(item => `<option value="${item.code}" ${language.code === item.code ? 'selected' : ''}>${item.name}</option>`).join('')}<option value="custom" ${language.code === 'custom' ? 'selected' : ''}>Custom</option></select></label><label id="deckCustomLanguageWrap" ${language.code === 'custom' ? '' : 'hidden'}>Custom language<input id="deckCustomLanguageInput" maxlength="100" value="${escapeHtml(language.code === 'custom' ? language.name : '')}" /></label><label>Deck tags<input id="deckTagsInput" value="${escapeHtml((deck.tags || []).join(', '))}" placeholder="e.g. language, travel, beginner" maxlength="300" /></label><p class="subject-dialog-note">Subjects identify what a deck teaches. Tags are broad categories shared by the whole deck; cards do not carry separate tags.</p><div class="library-dialog-actions"><button class="dialog-cancel" data-deck-metadata="cancel" type="button">Cancel</button><button class="primary-button" type="submit">Save details</button></div></form>`;
+  deckMetadataDialog.hidden = false; setTimeout(() => $('#deckSubjectInput')?.focus(), 0);
+}
+deckSubjectButton.addEventListener('click', () => { subjectDialog.hidden = true; renderDeckMetadataDialog(); });
+deckMetadataDialog.addEventListener('change', event => { if (event.target.id === 'deckLanguageInput') $('#deckCustomLanguageWrap').hidden = event.target.value !== 'custom'; });
+deckMetadataDialog.addEventListener('click', event => { if (event.target === deckMetadataDialog || event.target.dataset.deckMetadata === 'cancel') deckMetadataDialog.hidden = true; });
+deckMetadataDialog.addEventListener('submit', event => { event.preventDefault(); const deck = activeSet(); const subject = $('#deckSubjectInput').value.trim(); if (!subject) return; const domain = RecallMetadata.normaliseDomain($('#deckDomainInput').value); const languageChoice = $('#deckLanguageInput').value; const language = domain === 'language' ? RecallMetadata.normaliseLanguage(languageChoice === 'custom' ? { code: 'custom', name: $('#deckCustomLanguageInput').value.trim() } : languageChoice) : null; deck.subject = subject; deck.primarySubject = subject; deck.domain = domain; deck.language = language; deck.tags = cleanTags($('#deckTagsInput').value); deck.cards.forEach(card => { card.wordInfo = { ...card.wordInfo, language: card.wordInfo?.language || language }; }); deckMetadataDialog.hidden = true; save(); render(); showToast('Deck details saved.'); });
 subjectDialog.addEventListener('click', event => { const action = event.target.dataset.subjectAction; if (action === 'cancel') subjectDialog.hidden = true; if (action === 'save-primary') { activeSet().primarySubject = $('#primarySubjectSelect').value || null; subjectDialog.hidden = true; save(); render(); showToast('Deck subject details saved.'); } if (event.target === subjectDialog) subjectDialog.hidden = true; });
 subjectColoursDialog.addEventListener('click', event => { const button = event.target.closest('[data-subject-colour]'); if (button) applySubjectColour(button.dataset.subjectColour, button.dataset.colour); if (event.target.dataset.subjectColourAction === 'close' || event.target === subjectColoursDialog) subjectColoursDialog.hidden = true; });
 subjectColoursDialog.addEventListener('input', event => { if (event.target.dataset.subjectColourInput) applySubjectColour(event.target.dataset.subjectColourInput, event.target.value); });
 testModeButton.addEventListener('click', () => { state.pendingTestCardIds = null; openTestSetup(); });
+const renderTestQuestionBase = renderTestQuestion;
+renderTestQuestion = function () {
+  renderTestQuestionBase();
+  queueMicrotask(() => {
+    const input = $('#testTypedInput');
+    if (state.activeTest && input && !input.disabled) {
+      input.focus({ preventScroll: true });
+      input.select();
+    }
+  });
+};
 testMode.addEventListener('input', event => { if (event.target.matches('[data-test-deck], [data-test-folder], [data-test-tag], #testQuestionCount, #testCardFilter')) refreshTestPoolNote(); });
 testMode.addEventListener('click', event => { const action = event.target.closest('[data-test-action]')?.dataset.testAction; if (event.target.matches('[data-test-choice]')) { const question = activeTestQuestion(); submitTestAnswer(question.choices[Number(event.target.dataset.testChoice)]); return; } if (action === 'start') startTest(); if (action === 'skip') skipTestQuestion(); if (action === 'next') nextTestQuestion(); if (action === 'exit') { if (confirm('Exit this test? Your unfinished answers will be lost.')) closeTestMode(); } if (action === 'close') closeTestMode(); if (action === 'retry-missed') retryMissedTest(); if (action === 'study-missed') studyMissedTest(); });
 
@@ -985,3 +1166,97 @@ function studyMissedTest() { const source = testResultById(state.openTestResultI
 function closeTestMode() { clearInterval(testTimer); state.activeTest = null; testMode.hidden = true; }
 function openDeckSubjectDialog() { const deck = activeSet(); const subjects = subjectsForDeck(deck); const resolved = resolvedDeckSubject(deck); subjectDialog.hidden = false; subjectDialog.innerHTML = `<section class="library-dialog subject-dialog"><p class="eyebrow">Deck details</p><h3>${escapeHtml(deck.name)}</h3><label>Deck tags<input id="deckTagsInput" value="${escapeHtml(cleanTags(deck.tags).join(', '))}" placeholder="e.g. Biology: Cells, exam" maxlength="300" /></label><p class="subject-dialog-note">Deck tags organise the whole deck. Use <b>Subject: Topic</b> (for example <b>Biology: Transpiration</b>) to set its subject colour—there is no need to add this tag to every card.</p><label>Primary subject<select id="primarySubjectSelect"><option value="">Automatic (${resolved.subject || 'no subject detected'})</option>${subjects.map(subject => `<option value="${escapeHtml(subject)}" ${deck.primarySubject === subject ? 'selected' : ''}>${escapeHtml(subject)}</option>`).join('')}</select></label>${resolved.fallback ? `<p class="subject-fallback">“${escapeHtml(deck.primarySubject)}” is no longer in this deck. Using ${escapeHtml(resolved.subject || 'the normal deck style')} until you choose another subject.</p>` : ''}<div class="library-dialog-actions"><button class="dialog-cancel" data-subject-action="cancel" type="button">Cancel</button><button class="primary-button" data-subject-action="save-primary" type="button">Save details</button></div></section>`; }
 subjectDialog.addEventListener('click', event => { if (event.target.dataset.subjectAction === 'save-primary') { const deck = activeSet(); deck.tags = cleanTags($('#deckTagsInput')?.value); deck.cards.forEach(card => { card.tags = cleanTags([...(card.tags || []), ...deck.tags]); }); save(); render(); showToast(`Deck tags saved to ${deck.cards.length} card${deck.cards.length === 1 ? '' : 's'}.`); } });
+
+// Deck tags are deliberately shared by every card in a deck. These final handlers
+// replace the older per-card tag controls while preserving the familiar UI.
+openCardEditor = function (id) {
+  const card = activeCards().find(item => item.id === id); if (!card) return;
+  state.editingCardId = id;
+  elements.editFront.value = card.front; elements.editBack.value = card.back;
+  elements.editTags.value = (activeSet()?.tags || []).join(', ');
+  elements.editHint.value = card.hint || ''; elements.editNotes.value = card.notes || '';
+  $('#editGenderInput').value = card.wordInfo?.gender || 'unknown';
+  $('#editPartOfSpeechInput').value = card.wordInfo?.partOfSpeech || '';
+  $('#editAlternativesInput').value = (card.acceptedAnswers || []).join(', ');
+  const label = elements.editTags.closest('label');
+  if (label && !label.querySelector('.subject-tag-help')) { const help = document.createElement('small'); help.className = 'subject-tag-help'; help.textContent = 'Deck tags apply to every card in this deck.'; label.append(help); }
+  elements.cardEditor.hidden = false; setTimeout(() => elements.editFront.focus(), 0);
+};
+
+testChoicePool = function (question) {
+  const all = state.sets.flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, deckTags: set.tags || [] })));
+  const sameDeck = all.filter(card => card.deckId === question.deckId);
+  const sameFolder = all.filter(card => question.folderId && card.folderId === question.folderId && card.deckId !== question.deckId);
+  const sharedTags = all.filter(card => card.deckId !== question.deckId && card.deckTags.some(tag => (question.deckTags || []).some(item => item.toLocaleLowerCase() === tag.toLocaleLowerCase())));
+  const seen = new Set(); return [...sameDeck, ...sameFolder, ...sharedTags, ...all].filter(card => { const key = `${card.deckId}:${card.id}`; if (seen.has(key)) return false; seen.add(key); return true; });
+};
+
+elements.bulkTag.addEventListener('click', event => { event.stopImmediatePropagation(); showToast('Tags belong to the whole deck. Edit Deck details to change them.'); }, true);
+elements.bulkRemoveTag.addEventListener('click', event => { event.stopImmediatePropagation(); showToast('Tags belong to the whole deck. Edit Deck details to change them.'); }, true);
+elements.typedForm.addEventListener('click', event => {
+  if (!event.target.closest('[data-accept-alternative]')) return;
+  const card = currentCard(); const value = elements.typedInput.value.trim();
+  if (!card || !value || !state.typedChecked) return;
+  card.acceptedAnswers = cleanTags([...(card.acceptedAnswers || []), value]);
+  state.typedChecked = { ...state.typedChecked, accepted: true, classification: 'alternative' };
+  save(); render(); showToast('Saved as an accepted alternative.');
+});
+
+const renderWithTypoFeedback = render;
+render = function () {
+  renderWithTypoFeedback();
+  if (state.studyMode === 'typed' && state.typedChecked) {
+    const result = state.typedChecked;
+    const label = result.accepted ? (result.classification === 'typo' ? 'Correct with a small typo' : 'Correct') : 'Not quite';
+    elements.typedFeedback.innerHTML = `${label} &mdash; expected: ${escapeHtml(result.expected || '')}${!result.accepted ? ' <button type="button" class="text-button" data-accept-alternative>Accept as alternative</button>' : ''}`;
+    elements.typedFeedback.className = `typed-feedback ${result.accepted ? 'accepted' : 'rejected'}`;
+  }
+};
+
+submitTestAnswer = function (value) {
+  const test = state.activeTest; const question = activeTestQuestion();
+  if (!test || !question || test.feedback) return;
+  const correctAnswer = testAnswerValue(question);
+  const evaluation = question.answerType === 'typed'
+    ? RecallMetadata.evaluateTypedAnswer(value, correctAnswer, question.acceptedAnswers || [])
+    : { accepted: RecallTest.answersMatch(value, correctAnswer), classification: RecallTest.answersMatch(value, correctAnswer) ? 'exact' : 'incorrect' };
+  const result = evaluation.accepted ? 'correct' : 'incorrect';
+  const answer = { questionId: question.id, deckId: question.deckId, deckName: question.deckName, tags: question.deckTags || [], prompt: testPromptValue(question), correctAnswer, userAnswer: value || '-', answerType: question.answerType, result, classification: evaluation.classification, timeMs: Math.max(0, Date.now() - test.questionStartedAt) };
+  test.answers.push(answer); test.feedback = answer; save(); renderTestQuestion();
+};
+skipTestQuestion = function () {
+  const test = state.activeTest; const question = activeTestQuestion(); if (!test || !question || test.feedback) return;
+  test.answers.push({ questionId: question.id, deckId: question.deckId, deckName: question.deckName, tags: question.deckTags || [], prompt: testPromptValue(question), correctAnswer: testAnswerValue(question), userAnswer: 'Skipped', answerType: question.answerType, result: 'skipped', timeMs: Math.max(0, Date.now() - test.questionStartedAt) });
+  nextTestQuestion();
+};
+
+const answerForTestBase = testAnswerValue;
+testAnswerValue = function (question) { return question.answerType === 'gender' ? question.genderAnswer : answerForTestBase(question); };
+const openTestSetupBase = openTestSetup;
+openTestSetup = function () {
+  openTestSetupBase();
+  const style = $('#testAnswerStyle');
+  if (style && !style.querySelector('option[value="gender"]')) style.insertAdjacentHTML('beforeend', '<option value="gender">Gender quiz</option>');
+};
+const startTestBase = startTest;
+startTest = function () {
+  const config = testSetupConfig();
+  if (config.style !== 'gender') return startTestBase();
+  config.promptSide = 'front';
+  const pool = cardsForTest(config).filter(RecallMetadata.isGenderEligible);
+  const questions = RecallTest.selectQuestions(pool, config.count);
+  if (!questions.length) return showToast('Gender quizzes need language cards with gender information.');
+  const genderAnswer = card => RecallMetadata.genderAnswerFor(card);
+  const choices = card => RecallMetadata.genderChoices(card.language).map(choice => choice.label).filter((choice, index, values) => values.indexOf(choice) === index).sort(() => Math.random() - .5);
+  const now = Date.now();
+  state.activeTest = { id: makeId(), version: 2, config, pool, questions: questions.map(card => ({ ...card, answerType: 'gender', genderAnswer: genderAnswer(card), choices: choices(card) })), answers: [], currentIndex: 0, startedAt: new Date(now).toISOString(), deadlineAt: config.timed && config.timeLimitSeconds ? new Date(now + config.timeLimitSeconds * 1000).toISOString() : null, questionStartedAt: now, feedback: null };
+  renderTestQuestion();
+};
+const renderTestWithGenderBase = renderTestQuestion;
+renderTestQuestion = function () {
+  renderTestWithGenderBase();
+  const question = activeTestQuestion();
+  if (question?.answerType === 'gender') { const label = document.querySelector('.test-answer-label'); if (label) label.innerHTML = 'Choose the <b>grammatical gender</b>'; }
+};
+
+deckSubjectButton.addEventListener('click', event => { event.stopImmediatePropagation(); renderDeckMetadataDialog(); }, true);

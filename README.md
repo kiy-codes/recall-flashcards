@@ -1,11 +1,14 @@
 # Recall Flashcards
 
+**v1.0.0 — Initial public release**
+
 Recall is a calm, local-first flashcard app for Windows. It is built with Electron and keeps decks, folders, cards, learning progress, session history, tests, and preferences on the computer running the app.
 
 ## Features
 
 - Create decks and organise them in coloured, collapsible folders.
 - Add cards manually, paste text lists, or import CSV, TSV, and Recall share files.
+- Use the three-stage import review to choose deck details, map word metadata, and check every card before importing.
 - Customise the names of both card sides for every deck.
 - Study with flip cards or typed answers, including forgiving answer matching.
 - Use keyboard controls, shuffle, Due cards and other card filters, hints, flags, undo, fullscreen study, and custom keybinds.
@@ -13,7 +16,9 @@ Recall is a calm, local-first flashcard app for Windows. It is built with Electr
 - Track New, Learning, and Mastered card states, missed cards, streaks, session accuracy, and activity.
 - Add tags, search cards, edit cards in bulk, detect duplicates, and export decks.
 - Use Test Mode for typed, multiple-choice, or mixed assessments with time limits, saved results, review, retry, and history.
-- Add deck tags in **Deck details**. Tags such as `Biology: Cells` are subject tags: they are copied to every card in that deck and can provide a subtle deck colour accent.
+- Language decks with recognised gender data can also run article/gender tests (for example German `der` / `die` / `das`).
+- Set a subject, domain, optional language, and deck tags in **Deck details**. Tags describe the whole deck; legacy per-card tags are migrated safely when you open the updated app.
+- Add optional word details such as grammatical gender, source markers, part of speech, and accepted alternatives. Language decks can offer a gender quiz where the data supports it.
 - Sort Library decks by Subject, name, card count, or manual order.
 - Choose light, dark, or system theme and set subject colours locally.
 

@@ -6,6 +6,11 @@ mobile/node_modules/
 release/
 release-*/
 
+# Private pre-public-release installers stay local; retain only their notes.
+archive/internal-development-builds/*
+!archive/internal-development-builds/README.md
+!archive/internal-development-builds/DEVELOPMENT-CHANGELOG.md
+
 # Local configuration and secrets
 .env
 .env.*
