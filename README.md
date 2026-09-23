@@ -47,7 +47,7 @@ npm test
 Run the Electron interaction smoke test:
 
 ```powershell
-npx electron .\smoke-test.js
+npm run test:smoke
 ```
 
 ## Build a Windows installer

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Mobile: New deck, New folder, Move to folder, Study again, Duplicate card, and Undo no longer erase the whole library. Study sessions are saved reliably, and folder Rename works on Android.
+- Shared deck files can no longer inject HTML into the app. Folder colours are validated, names always display as text, and the app has a Content-Security-Policy.
+- Share imports now follow the review screen: unticked rows are skipped and edited text is used.
+- Saved data stays small (tests no longer store a copy of every card), a full disk shows a message instead of breaking the study screen, and an unreadable library is kept as a backup instead of being deleted.
+- The bulk "Move to" menu works with any deck, and the missed-cards filter no longer sticks to later tests.
+- CSV/TSV exports are safe to open in spreadsheet apps.
+- Electron 44 with navigation guards; unused Android permissions removed.
+
 ## 1.0.0 — Initial public release
 
 Recall Flashcards is now ready for its first public release.
