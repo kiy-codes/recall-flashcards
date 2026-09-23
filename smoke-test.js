@@ -161,6 +161,7 @@ app.whenReady().then(async () => {
         assert(document.activeElement?.id === 'testTypedInput', 'Next typed Test Mode question did not refocus the answer field');
         click('[data-test-action="skip"]');
         assert(!state.activeTest && state.testHistory.length === 1, 'Completed test was not saved separately');
+        assert(JSON.parse(localStorage.getItem(STORAGE_KEY)).testHistory.every(test => !Object.hasOwn(test, 'pool')), 'Saved tests still store a copy of every card');
         assert(document.querySelector('#testMode').textContent.includes('Review every question'), 'Test results screen did not render complete question review');
         click('[data-test-action="history"]');
         assert(document.querySelector('.test-history-list'), 'Dedicated test history did not open');
@@ -366,6 +367,16 @@ app.whenReady().then(async () => {
         deleteFolder(languages.id);
         assert(!state.folders.some(item => item.id === languages.id), 'Folder deletion failed');
 
+        // Storage stays bounded, and a full disk must not break studying.
+        state.reviewLog = Array.from({ length: 2100 }, (_, index) => ({ id: 'log-' + index, cardId: one.id, timestamp: new Date().toISOString(), outcome: 'correct' })); save();
+        assert(JSON.parse(localStorage.getItem(STORAGE_KEY)).reviewLog.length === 2000, 'Review log was not capped');
+        resetStudyRun([one], 'all'); const realSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); };
+        click('#correctBtn'); await wait(300);
+        Storage.prototype.setItem = realSetItem;
+        assert(state.correct === 1 && document.querySelector('#progressText').textContent.startsWith('1 /') && document.querySelector('#toast').textContent.includes('could not be saved'), 'A full disk broke the study screen');
+        closeCompletionDialog(); save();
+
         exportDeck(','); exportDeck('\\t'); exportShare();
         await wait(400);
 
@@ -374,6 +385,15 @@ app.whenReady().then(async () => {
     `);
     if (!downloads.some(name => name.endsWith('.csv')) || !downloads.some(name => name.endsWith('.tsv')) || !downloads.includes('recall-decks.recall')) fail(`Exports did not download: ${JSON.stringify(downloads)}`);
     if (consoleProblems.length) fail(`Content Security Policy violations:\n${consoleProblems.join('\n')}`);
+
+    // Saved data that can't be read cleanly must never be deleted.
+    const reload = async (seed) => { await window.webContents.executeJavaScript(`localStorage.clear(); ${seed}; true`); await window.loadFile(path.join(__dirname, 'index.html')); await new Promise(resolve => setTimeout(resolve, 200)); };
+    await reload(`localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: [null, { id: 'a', name: 'Biology', cards: [null, { id: 'c1', front: 'cell', back: 'unit of life' }] }], folders: [null], sessionHistory: [null], testHistory: [null], activeSetId: 'a' }))`);
+    const tolerant = await window.webContents.executeJavaScript(`state.sets.map(set => set.name + ':' + set.cards.length).join()`);
+    if (tolerant !== 'Biology:1') fail(`Null records in saved data lost the library: ${tolerant}`);
+    await reload(`localStorage.setItem(STORAGE_KEY, '{"sets": [{"name": "Biology"')`);
+    const backups = await window.webContents.executeJavaScript(`Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY + '-unreadable-')).map(key => localStorage.getItem(key))`);
+    if (backups.length !== 1 || !backups[0].includes('Biology')) fail('Unreadable saved data was not kept as a backup');
     console.log(result);
   } catch (error) {
     console.error(error.stack || error);

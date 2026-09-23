@@ -75,7 +75,7 @@ const normaliseCard = (card) => {
 };
 const knownLanguage = value => RecallMetadata.LANGUAGES.find(language => language.name.toLocaleLowerCase() === String(value || '').trim().toLocaleLowerCase());
 const normaliseDeck = (set, index = 0) => {
-  const rawCards = Array.isArray(set?.cards) ? set.cards : [];
+  const rawCards = Array.isArray(set?.cards) ? set.cards.filter(card => card && typeof card === 'object') : [];
   const legacyTagMigration = RecallMetadata.migrateLegacyCardTags(set?.tags, rawCards);
   const legacyCardTags = legacyTagMigration.tags;
   const subjectTag = [...(set?.tags || []), ...legacyCardTags].map(RecallSubjects.parseSubjectTag).find(Boolean);
@@ -94,20 +94,36 @@ function applyTheme() {
   elements.themeSelect.value = state.theme;
 }
 function renderKeybinds() { elements.keybindFlip.value = state.keybinds.flip.toUpperCase(); elements.keybindRetry.value = state.keybinds.retry.toUpperCase(); elements.keybindCorrect.value = state.keybinds.correct.toUpperCase(); elements.keybindUndo.value = state.keybinds.undo.toUpperCase(); }
+// localStorage holds only a few megabytes, so keep saved history bounded.
+const REVIEW_LOG_LIMIT = 2000;
+// Set when the saved library could not be read or backed up, so saving can't overwrite it.
+let storageLocked = false;
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: state.sets, folders: state.folders, activeSetId: state.activeSetId, sessionHistory: state.sessionHistory, testHistory: state.testHistory, reviewLog: state.reviewLog, currentSession: state.currentSession, activity: state.activity, shuffled: state.shuffled, repeatMissed: state.repeatMissed, studyFilter: state.studyFilter, studyMode: state.studyMode, theme: state.theme, keybinds: state.keybinds, subjectColors: state.subjectColors }));
+  if (storageLocked) { showToast('Recall could not read your saved library, so changes are not being saved over it.'); return false; }
+  if (state.reviewLog.length > REVIEW_LOG_LIMIT) state.reviewLog = state.reviewLog.slice(-REVIEW_LOG_LIMIT);
+  // Saved tests keep their questions; the full card pool is only needed while a test runs.
+  const testHistory = state.testHistory.map(({ pool, ...test }) => test);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: state.sets, folders: state.folders, activeSetId: state.activeSetId, sessionHistory: state.sessionHistory, testHistory, reviewLog: state.reviewLog, currentSession: state.currentSession, activity: state.activity, shuffled: state.shuffled, repeatMissed: state.repeatMissed, studyFilter: state.studyFilter, studyMode: state.studyMode, theme: state.theme, keybinds: state.keybinds, subjectColors: state.subjectColors }));
+    return true;
+  } catch (error) {
+    console.error('Could not save the library', error);
+    showToast('Changes could not be saved because storage is full. Export your decks as a backup.');
+    return false;
+  }
 }
 
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved?.sets?.length) {
-      state.sets = saved.sets.map(normaliseDeck);
-      state.folders = Array.isArray(saved.folders) ? saved.folders.map((folder, index) => ({ ...folder, order: Number.isFinite(folder.order) ? folder.order : index, color: safeColour(folder.color, FOLDER_COLORS[index % FOLDER_COLORS.length]) })) : [];
+    const records = list => Array.isArray(list) ? list.filter(item => item && typeof item === 'object') : [];
+    if (records(saved?.sets).length) {
+      state.sets = records(saved.sets).map(normaliseDeck);
+      state.folders = Array.isArray(saved.folders) ? records(saved.folders).map((folder, index) => ({ ...folder, order: Number.isFinite(folder.order) ? folder.order : index, color: safeColour(folder.color, FOLDER_COLORS[index % FOLDER_COLORS.length]) })) : [];
       state.activeSetId = state.sets.some(set => set.id === saved.activeSetId) ? saved.activeSetId : state.sets[0].id;
       state.shuffled = saved.shuffled !== false;
-      state.sessionHistory = Array.isArray(saved.sessionHistory) ? saved.sessionHistory.filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? saved.performance.filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
-      state.testHistory = Array.isArray(saved.testHistory) ? saved.testHistory.filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
+      state.sessionHistory = Array.isArray(saved.sessionHistory) ? records(saved.sessionHistory).filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? records(saved.performance).filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
+      state.testHistory = Array.isArray(saved.testHistory) ? records(saved.testHistory).filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
       state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry'].includes(item.outcome)) : [];
       state.currentSession = saved.currentSession?.attempts ? { learned: 0, typos: 0, missedCardIds: [], ...saved.currentSession, missedCardIds: Array.isArray(saved.currentSession.missedCardIds) ? saved.currentSession.missedCardIds : [] } : null;
       state.activity = saved.activity && typeof saved.activity === 'object' ? saved.activity : {};
@@ -121,7 +137,13 @@ function load() {
       state.sets = [set]; state.activeSetId = set.id; state.shuffled = legacy?.shuffled !== false;
       if (cards.length) save();
     }
-  } catch { localStorage.removeItem(STORAGE_KEY); }
+  } catch (error) {
+    // Never delete the user's only copy: keep it under a backup key, or stop saving if even that fails.
+    console.error('Could not read the saved library', error);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    try { if (raw) localStorage.setItem(`${STORAGE_KEY}-unreadable-${Date.now()}`, raw); } catch { storageLocked = true; }
+    queueMicrotask(() => showToast(storageLocked ? 'Recall could not read your saved library, so changes are not being saved over it.' : 'Part of your saved library could not be read. A backup copy was kept.'));
+  }
   if (!state.sets.length) {
     const set = normaliseDeck({ id: makeId(), name: 'My study deck', subject: 'General', domain: 'other', tags: [], folderId: null, frontLabel: 'First side', backLabel: 'Second side', order: 0, createdAt: Date.now(), cards: [] });
     state.sets = [set]; state.activeSetId = set.id;
