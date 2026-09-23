@@ -1,6 +1,6 @@
 {
   "name": "recall-flashcards",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A focused, keyboard-first flashcard app for Windows",
   "main": "main.js",
   "author": "Recall",

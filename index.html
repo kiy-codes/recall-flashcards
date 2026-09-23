@@ -14,12 +14,17 @@
     <div class="grain"></div>
     <main class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#study" aria-label="Recall home">
+        <a class="brand" href="#home" aria-label="Recall home">
           <span class="brand-mark">R</span>
           <span>Recall</span>
         </a>
-        <button class="library-trigger" id="libraryTrigger" type="button"><span class="library-icon">☷</span> Library</button>
-        <div class="settings-control"><button class="settings-button" id="settingsBtn" type="button" aria-expanded="false">Settings <span>⚙</span></button><div class="settings-menu" id="settingsMenu" hidden><p class="control-label">Appearance</p><label class="settings-select">Theme<select id="themeSelect"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="control-label">Keyboard shortcuts</p><p class="settings-help">Click a field, then press a key. Arrow keys always work too.</p><label class="keybind-field">Flip card<input id="keybindFlip" readonly /></label><label class="keybind-field">Needs practice<input id="keybindRetry" readonly /></label><label class="keybind-field">Mark correct<input id="keybindCorrect" readonly /></label><label class="keybind-field">Undo<input id="keybindUndo" readonly /></label><button class="settings-reset" id="resetKeybindsBtn" type="button">Reset shortcuts</button></div></div>
+        <nav class="top-nav" aria-label="Main navigation">
+          <button class="top-nav-button active" data-home-nav="home" type="button">Home</button>
+          <button class="top-nav-button" data-home-nav="study" type="button">Study</button>
+          <button class="top-nav-button" data-home-nav="library" type="button">Library</button>
+          <button class="top-nav-button" data-home-nav="add" type="button">Add cards</button>
+          <button class="top-nav-button" data-home-nav="test" type="button">Test</button>
+        </nav>
         <div class="deck-summary" aria-live="polite">
           <span class="pulse"></span>
           <span id="deckName">My study deck</span>
@@ -28,6 +33,7 @@
         </div>
         <button class="text-button" id="attemptsTrigger" type="button">Attempts</button>
         <button class="text-button" id="clearProgressBtn" type="button">Reset progress</button>
+        <div class="settings-control"><button class="settings-button" id="settingsBtn" type="button" aria-label="Settings" title="Settings" aria-expanded="false"><span aria-hidden="true">&#9881;</span></button><div class="settings-menu" id="settingsMenu" hidden><p class="control-label">Appearance</p><label class="settings-select">Theme<select id="themeSelect"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="control-label">Keyboard shortcuts</p><p class="settings-help">Click a field, then press a key. Arrow keys always work too.</p><label class="keybind-field">Flip card<input id="keybindFlip" readonly /></label><label class="keybind-field">Needs practice<input id="keybindRetry" readonly /></label><label class="keybind-field">Mark correct<input id="keybindCorrect" readonly /></label><label class="keybind-field">Undo<input id="keybindUndo" readonly /></label><button class="settings-reset" id="resetKeybindsBtn" type="button">Reset shortcuts</button></div></div>
       </header>
 
       <aside class="library-drawer" id="libraryDrawer" aria-label="Flashcard library" aria-hidden="true">
@@ -56,7 +62,19 @@
         </form>
       </div>
 
-      <section class="hero" id="study">
+      <section class="home-dashboard" id="home" aria-labelledby="homeHeading">
+        <header class="home-head">
+          <div><p class="eyebrow">Welcome back</p><h1 id="homeHeading">Ready to <em>consolidate?</em></h1><p id="homeMessage">Your next focused revision session starts here.</p></div>
+          <div class="home-actions"><button class="primary-button" id="homeStartStudyBtn" type="button">Start studying <span>→</span></button><button class="text-button" id="homeContinueStudyBtn" type="button" hidden>Continue studying</button></div>
+        </header>
+        <div class="home-stats" id="homeStats" aria-live="polite"></div>
+        <div class="home-grid">
+          <section class="home-panel home-recent"><div class="home-panel-head"><div><p class="eyebrow">Pick up where you left off</p><h2>Recent decks</h2></div><button class="text-button" data-home-action="library" type="button">Full library</button></div><div id="homeRecentDecks"></div></section>
+          <section class="home-panel home-library-shortcuts"><div><p class="eyebrow">Your collection</p><h2>Library</h2></div><label class="library-search home-library-search"><span>⌕</span><input id="homeLibrarySearch" type="search" placeholder="Search decks and folders" autocomplete="off" /></label><div class="home-library-actions"><button class="text-button" data-home-action="new-deck" type="button">Create deck</button><button class="text-button" data-home-action="browse-folders" type="button">Browse folders</button><button class="text-button" data-home-action="library" type="button">Open library</button></div><p class="home-library-note" id="homeLibraryNote"></p></section>
+        </div>
+      </section>
+
+      <section class="hero" id="study" data-revision-workspace data-app-view="study">
         <div class="hero-copy">
           <p class="eyebrow">Focused practice</p>
           <h1>Make recall<br />feel <em>natural.</em></h1>
@@ -77,7 +95,7 @@
         </div>
       </section>
 
-      <section class="study-area" aria-label="Study flashcards">
+      <section class="study-area" aria-label="Study flashcards" data-revision-workspace data-app-view="study">
         <aside class="study-controls">
           <div class="control-group">
             <p class="control-label">Show first</p>
@@ -143,7 +161,7 @@
         </div>
       </section>
 
-      <section class="workspace" id="create">
+      <section class="workspace" id="create" data-revision-workspace data-app-view="cards">
         <div class="workspace-heading">
           <div>
             <p class="eyebrow">Build your deck</p>
@@ -192,7 +210,7 @@
         </div>
       </section>
 
-      <section class="deck-section" id="deck">
+      <section class="deck-section" id="deck" data-revision-workspace data-app-view="deck">
         <div class="deck-heading">
           <div><p class="eyebrow">Your collection</p><h2>Deck cards</h2></div>
           <div class="deck-heading-actions"><button class="text-button" id="exportDeckBtn" type="button">Export CSV</button><button class="text-button" id="exportTsvBtn" type="button">Export TSV</button><details class="share-picker"><summary>Share decks <span id="shareDeckSummary">Choose decks</span></summary><div class="share-picker-options" id="shareDeckOptions"></div></details><button class="text-button" id="shareDecksBtn" type="button">Export share file</button><button class="danger-button" id="clearDeckBtn" type="button" disabled>Clear deck</button></div>
@@ -209,14 +227,14 @@
         </div>
       </section>
 
-      <section class="insights-section" aria-labelledby="insightsHeading">
+      <section class="insights-section" aria-labelledby="insightsHeading" data-revision-workspace data-app-view="progress">
         <div class="insights-heading"><div><p class="eyebrow">Your momentum</p><h2 id="insightsHeading">Session accuracy</h2></div><p>Accuracy for every study session, across all sets.</p></div>
         <div class="chart-panel">
           <div class="chart-stat"><strong id="bestAccuracy">—</strong><span>best session</span><p id="accuracyChange">Start a session to see your change.</p></div>
           <div class="chart-wrap"><svg id="progressChart" viewBox="0 0 560 180" role="img" aria-label="Session accuracy graph"></svg><p class="chart-empty" id="chartEmpty">Your session history will appear here as you study.</p></div>
         </div>
       </section>
-      <section class="heatmap-section" aria-labelledby="heatmapHeading">
+      <section class="heatmap-section" aria-labelledby="heatmapHeading" data-revision-workspace data-app-view="progress">
         <div class="insights-heading"><div><p class="eyebrow">Study activity</p><h2 id="heatmapHeading">Your study calendar</h2></div><p>Each square shows how many cards you reviewed that day.</p></div>
         <div class="heatmap-panel"><div class="heatmap-months" id="heatmapMonths"></div><div class="heatmap-grid" id="heatmapGrid" aria-label="Study activity heatmap"></div><p class="heatmap-tip" id="heatmapTip">Hover a day to see its study details.</p></div>
       </section>

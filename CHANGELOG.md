@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.2 - Navigation and interface polish
+
+- Added a focused Home dashboard as the app’s starting screen.
+- Reworked navigation so Study, Add cards, and Test open directly for the active deck, while Library remains the deck chooser.
+- Prevented hidden revision screens from appearing below the dashboard.
+- Simplified the top bar: one Library route, one Test route, and a compact Settings icon on the right.
+- Improved view changes so they start at the top of the selected screen.
+
+## 1.0.1 - Test Mode improvements and bug fixes
+
+- Test Mode now starts with the currently open deck, with optional folder selection kept in a collapsible section.
+- Untimed tests show elapsed time without a hidden countdown limit.
+- Gender quiz prompts no longer reveal the grammatical-gender marker.
+- Improved Test Mode focus and control behaviour, plus visual alignment fixes across card rows.
+
 ## 1.0.0 — Initial public release
 
 Recall Flashcards is now ready for its first public release.

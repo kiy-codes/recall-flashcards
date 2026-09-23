@@ -36,6 +36,9 @@ const state = {
   theme: 'system',
   subjectColors: {},
   keybinds: { flip: 'w', retry: 'a', correct: 'd', undo: 'z' },
+  currentView: 'home',
+  libraryIntent: 'library',
+  libraryReturnView: 'home',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -48,6 +51,7 @@ const elements = {
   deckSearch: $('#deckSearch'), clearSearch: $('#clearSearchBtn'), tagFilter: $('#tagFilter'), manageTags: $('#manageTagsBtn'), selectCards: $('#selectCardsBtn'), selectionCount: $('#selectionCount'), bulkActions: $('#bulkActions'), bulkTag: $('#bulkTagBtn'), bulkRemoveTag: $('#bulkRemoveTagBtn'), bulkMoveDeck: $('#bulkMoveDeck'), bulkDuplicate: $('#bulkDuplicateBtn'), bulkDelete: $('#bulkDeleteBtn'), exportDeck: $('#exportDeckBtn'), exportTsv: $('#exportTsvBtn'), shareDeckSelect: $('#shareDeckSelect'), shareDecks: $('#shareDecksBtn'), cardEditor: $('#cardEditorDialog'), cardEditorForm: $('#cardEditorForm'), cardEditorCancel: $('#cardEditorCancel'), editFront: $('#editFrontInput'), editBack: $('#editBackInput'), editTags: $('#editTagsInput'), editHint: $('#editHintInput'), editNotes: $('#editNotesInput'), tagDialog: $('#tagDialog'), tagDialogList: $('#tagManagerList'), tagDialogClose: $('#tagDialogClose'), newTag: $('#newTagBtn'), importPreview: $('#importPreviewDialog'), importPreviewClose: $('#importPreviewClose'), importPreviewCancel: $('#importPreviewCancel'), importPreviewRows: $('#importPreviewRows'), importPreviewSummary: $('#importPreviewSummary'), mapFront: $('#mapFront'), mapBack: $('#mapBack'), mapTags: $('#mapTags'), mapNotes: $('#mapNotes'), mapHint: $('#mapHint'), importDestination: $('#importDestination'), shareImportModeWrap: $('#shareImportModeWrap'), shareImportMode: $('#shareImportMode'), duplicateMode: $('#duplicateMode'), confirmImport: $('#confirmImportBtn'),
   frontSegment: $('#frontSegment'), backSegment: $('#backSegment'), frontLabelInput: $('#frontLabelInput'), backLabelInput: $('#backLabelInput'), frontInputLabel: $('#frontInputLabel'), backInputLabel: $('#backInputLabel'),
   drawer: $('#libraryDrawer'), scrim: $('#drawerScrim'), libraryTree: $('#libraryTree'), librarySearch: $('#librarySearch'), librarySort: $('#librarySort'), fullLibrary: $('#fullLibrary'), fullLibraryGrid: $('#fullLibraryGrid'), fullLibrarySearch: $('#fullLibrarySearch'), fullLibrarySort: $('#fullLibrarySort'), attemptsDrawer: $('#attemptsDrawer'), attemptsScrim: $('#attemptsScrim'), attemptsList: $('#attemptsList'), attemptsSubtitle: $('#attemptsSubtitle'), dialog: $('#libraryDialog'), dialogForm: $('#libraryDialogForm'), dialogEyebrow: $('#libraryDialogEyebrow'), dialogTitle: $('#libraryDialogTitle'), dialogLabel: $('#libraryDialogLabel'), dialogInput: $('#libraryDialogInput'), dialogCancel: $('#libraryDialogCancel'), dialogSave: $('#libraryDialogSave'),
+  homeStats: $('#homeStats'), homeMessage: $('#homeMessage'), homeRecentDecks: $('#homeRecentDecks'), homeStartStudy: $('#homeStartStudyBtn'), homeContinueStudy: $('#homeContinueStudyBtn'), homeLibrarySearch: $('#homeLibrarySearch'), homeLibraryNote: $('#homeLibraryNote'),
 };
 
 elements.shareDeckOptions = $('#shareDeckOptions');
@@ -96,6 +100,16 @@ function applyTheme() {
 function renderKeybinds() { elements.keybindFlip.value = state.keybinds.flip.toUpperCase(); elements.keybindRetry.value = state.keybinds.retry.toUpperCase(); elements.keybindCorrect.value = state.keybinds.correct.toUpperCase(); elements.keybindUndo.value = state.keybinds.undo.toUpperCase(); }
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: state.sets, folders: state.folders, activeSetId: state.activeSetId, sessionHistory: state.sessionHistory, testHistory: state.testHistory, reviewLog: state.reviewLog, currentSession: state.currentSession, activity: state.activity, shuffled: state.shuffled, repeatMissed: state.repeatMissed, studyFilter: state.studyFilter, studyMode: state.studyMode, theme: state.theme, keybinds: state.keybinds, subjectColors: state.subjectColors }));
+}
+
+function setAppView(view = 'home') {
+  state.currentView = view;
+  document.querySelector('.app-shell')?.classList.toggle('dashboard-only', view === 'home');
+  const home = document.querySelector('#home');
+  if (home) home.hidden = view !== 'home';
+  document.querySelectorAll('[data-revision-workspace]').forEach(section => { section.hidden = section.dataset.appView !== view; });
+  focusHomeNavigation?.(view === 'cards' ? 'add' : view === 'deck' ? 'library' : view);
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
 }
 
 function load() {
@@ -213,7 +227,56 @@ function render() {
     const expected = showFront ? card.back : card.front; elements.typedPrompt.textContent = `Type the ${showFront ? names.back : names.front}`;
     if (state.typedChecked) { elements.typedFeedback.textContent = `${state.typedChecked.accepted ? 'Correct' : 'Not quite'} — expected: ${expected}`; elements.typedFeedback.className = `typed-feedback ${state.typedChecked.accepted ? 'accepted' : 'rejected'}`; } else { elements.typedFeedback.textContent = ''; elements.typedFeedback.className = 'typed-feedback'; }
   }
-  renderDeck(); renderLibrary(); renderInsights(); renderHeatmap();
+  renderDeck(); renderLibrary(); renderInsights(); renderHeatmap(); renderHomeDashboard();
+}
+
+function homeDeckLastStudied(deck) {
+  const sessions = state.sessionHistory.filter(session => session.deckId === deck.id && (session.endedAt || session.startedAt));
+  const latest = sessions.sort((a, b) => new Date(b.endedAt || b.startedAt) - new Date(a.endedAt || a.startedAt))[0];
+  return latest?.endedAt || latest?.startedAt || null;
+}
+
+function homeRelativeTime(value) {
+  if (!value) return 'Not studied yet';
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value)) / 60000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function renderHomeDashboard() {
+  if (!elements.homeStats) return;
+  const allCards = state.sets.flatMap(set => set.cards);
+  const due = allCards.filter(card => RecallScheduler.isDue(card)).length;
+  const fresh = allCards.filter(card => card.state === 'New').length;
+  const learning = allCards.filter(card => card.state === 'Learning').length;
+  const streak = studyStreaks().current;
+  const today = state.activity[localDayKey()]?.reviewed || 0;
+  const recentSessions = [...state.sessionHistory].filter(session => session.attempts).slice(-5);
+  const recentAccuracy = recentSessions.length ? Math.round(recentSessions.reduce((total, session) => total + ((session.correct / session.attempts) * 100), 0) / recentSessions.length) : null;
+  const stats = [
+    ['Due reviews', due, due ? 'Ready when you are' : 'You are caught up'],
+    ['New items', fresh, fresh ? 'Waiting to be learned' : 'No new items'],
+    ['In progress', learning, learning ? 'Still being learned' : 'Nothing in progress'],
+    ['Study streak', `${streak} ${streak === 1 ? 'day' : 'days'}`, streak ? 'Keep it going' : 'Start today'],
+    ['Reviewed today', today, today ? 'Cards reviewed' : 'No activity yet'],
+    ['Recent accuracy', recentAccuracy === null ? '—' : `${recentAccuracy}%`, recentAccuracy === null ? 'Complete a session to see this' : 'Last 5 sessions'],
+  ];
+  elements.homeStats.innerHTML = stats.map(([label, value, note]) => `<article class="home-stat"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join('');
+  const unfinished = Boolean(state.currentSession?.attempts && currentCard());
+  elements.homeContinueStudy.hidden = !unfinished;
+  elements.homeMessage.textContent = !allCards.length ? 'Create a deck or add your first card to begin.' : unfinished ? `You have ${Math.max(0, state.queue.length - state.currentIndex)} card${state.queue.length - state.currentIndex === 1 ? '' : 's'} left in your current session.` : due ? `${due} card${due === 1 ? '' : 's'} are due for review.` : 'Your cards are saved locally and ready whenever you are.';
+  const recent = [...state.sets].sort((a, b) => (new Date(homeDeckLastStudied(b) || 0) - new Date(homeDeckLastStudied(a) || 0)) || b.createdAt - a.createdAt).slice(0, 5);
+  elements.homeRecentDecks.innerHTML = allCards.length ? recent.map(deck => {
+    const deckDue = deck.cards.filter(card => RecallScheduler.isDue(card)).length;
+    const last = homeDeckLastStudied(deck);
+    return `<article class="home-deck"><button class="home-deck-open" data-home-deck="${deck.id}" type="button"><span><b>${escapeHtml(deck.name)}</b><small>${escapeHtml(deck.subject || deck.domain || 'General')} · ${deck.cards.length} cards</small></span><span class="home-deck-meta"><small>${deckDue} due · ${homeRelativeTime(last)}</small><i>→</i></span></button></article>`;
+  }).join('') : '<div class="home-empty"><strong>No cards yet</strong><p>Create a deck, then add cards or paste a list to start studying.</p><button class="primary-button" data-home-action="new-deck" type="button">Create your first deck</button></div>';
+  const folders = state.folders.length;
+  elements.homeLibraryNote.textContent = state.sets.length ? `${state.sets.length} deck${state.sets.length === 1 ? '' : 's'}${folders ? ` in ${folders} folder${folders === 1 ? '' : 's'}` : ''}.` : 'Your library is empty.';
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' })[char]); }
@@ -879,8 +942,8 @@ elements.importPreview.addEventListener('input', event => {
   if (event.target.id === 'importFlowTags') metadata.tags = cleanTags(event.target.value);
 });
 
-$('#libraryTrigger').addEventListener('click', openLibrary); $('#libraryClose').addEventListener('click', closeLibrary); elements.scrim.addEventListener('click', closeLibrary);
-$('#fullLibraryBtn').addEventListener('click', openFullLibrary); $('#fullLibraryClose').addEventListener('click', closeFullLibrary); $('#fullNewSetBtn').addEventListener('click', () => openLibraryDialog({ type: 'new-set' }, `New set ${state.sets.length + 1}`)); $('#fullNewFolderBtn').addEventListener('click', () => openLibraryDialog({ type: 'new-folder' }, `Folder ${state.folders.length + 1}`));
+$('#libraryClose').addEventListener('click', closeLibrary); elements.scrim.addEventListener('click', closeLibrary);
+$('#fullLibraryBtn').addEventListener('click', openFullLibrary); $('#fullLibraryClose').addEventListener('click', () => { closeFullLibrary(); setAppView(state.libraryReturnView || 'home'); }); $('#fullNewSetBtn').addEventListener('click', () => openLibraryDialog({ type: 'new-set' }, `New set ${state.sets.length + 1}`)); $('#fullNewFolderBtn').addEventListener('click', () => openLibraryDialog({ type: 'new-folder' }, `Folder ${state.folders.length + 1}`));
 $('#attemptsTrigger').addEventListener('click', openAttempts); $('#attemptsClose').addEventListener('click', closeAttempts); elements.attemptsScrim.addEventListener('click', closeAttempts);
 function moveSet(setId, direction) {
   const set = state.sets.find(item => item.id === setId); if (!set) return;
@@ -931,7 +994,15 @@ function handleLibraryClick(event) {
   const moveFolderId = event.target.closest('[data-move-folder]')?.dataset.moveFolder;
   if (moveFolderId) { moveFolder(moveFolderId, event.target.closest('[data-move-folder]').dataset.direction); return; }
   const setId = event.target.closest('[data-set]')?.dataset.set;
-  if (!setId) return; state.activeSetId = setId; save(); buildQueue(); closeLibrary(); closeFullLibrary(); document.querySelector('#study').scrollIntoView({ behavior: 'smooth' });
+  if (!setId) return;
+  state.activeSetId = setId;
+  save(); buildQueue(); closeLibrary(); closeFullLibrary();
+  const intent = state.libraryIntent || 'library';
+  state.libraryIntent = 'library';
+  if (intent === 'test') { setAppView('test'); openTestSetup(); return; }
+  if (intent === 'cards') { setAppView('cards'); return; }
+  if (intent === 'library') { setAppView('deck'); return; }
+  openHomeStudy(setId, true);
 }
 function handleLibraryChange(event) {
   const folderId = event.target.dataset.folderColor;
@@ -981,9 +1052,50 @@ migrateTestHistory();
 const testMode = document.createElement('section');
 testMode.id = 'testMode'; testMode.className = 'test-mode'; testMode.hidden = true; testMode.setAttribute('aria-label', 'Test mode');
 document.body.append(testMode);
-const testModeButton = document.createElement('button');
-testModeButton.id = 'testModeBtn'; testModeButton.className = 'test-trigger'; testModeButton.type = 'button'; testModeButton.textContent = 'Test mode';
-$('#libraryTrigger').insertAdjacentElement('afterend', testModeButton);
+
+function focusHomeNavigation(destination) {
+  document.querySelectorAll('[data-home-nav]').forEach(button => button.classList.toggle('active', button.dataset.homeNav === destination));
+}
+setAppView('home');
+function openHomeStudy(deckId = state.activeSetId, continueSession = false) {
+  const deck = state.sets.find(set => set.id === deckId);
+  if (!deck) return;
+  state.activeSetId = deck.id;
+  if (!continueSession) buildQueue(); else render();
+  save(); setAppView('study');
+  setTimeout(() => elements.card?.focus({ preventScroll: true }), 350);
+}
+function openDeckChooser(intent = 'library', search = '') {
+  state.libraryReturnView = state.currentView;
+  state.libraryIntent = intent;
+  setAppView('library');
+  if (search) { elements.fullLibrarySearch.value = search; elements.fullLibrarySearch.dispatchEvent(new Event('input')); }
+  openFullLibrary(); focusHomeNavigation(intent === 'cards' ? 'add' : intent === 'test' ? 'test' : intent === 'study' ? 'study' : 'library');
+}
+document.querySelectorAll('[data-home-nav]').forEach(button => button.addEventListener('click', () => {
+  const destination = button.dataset.homeNav;
+  closeFullLibrary();
+  if (destination === 'home') { setAppView('home'); return; }
+  if (destination === 'library') { openDeckChooser('library'); return; }
+  if (destination === 'study') { openHomeStudy(state.activeSetId, Boolean(state.currentSession?.attempts && currentCard())); return; }
+  if (destination === 'add') { setAppView('cards'); return; }
+  if (destination === 'test') { state.pendingTestCardIds = null; setAppView('test'); openTestSetup(); }
+}));
+elements.homeStartStudy?.addEventListener('click', () => {
+  openHomeStudy(state.activeSetId, Boolean(state.currentSession?.attempts && currentCard()));
+});
+elements.homeContinueStudy?.addEventListener('click', () => openHomeStudy(state.activeSetId, true));
+document.querySelector('#home')?.addEventListener('click', event => {
+  const deckId = event.target.closest('[data-home-deck]')?.dataset.homeDeck;
+  if (deckId) return openHomeStudy(deckId);
+  const action = event.target.closest('[data-home-action]')?.dataset.homeAction;
+  if (action === 'new-deck') openLibraryDialog({ type: 'new-set' }, `New set ${state.sets.length + 1}`);
+  if (action === 'browse-folders' || action === 'library') openDeckChooser('library');
+});
+elements.homeLibrarySearch?.addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); openDeckChooser('library', elements.homeLibrarySearch.value.trim()); }
+});
+document.querySelector('.brand')?.addEventListener('click', event => { event.preventDefault(); closeFullLibrary(); closeLibrary(); setAppView('home'); });
 let testTimer = null;
 
 function testAllTags() { return allTags(); }
@@ -1130,7 +1242,6 @@ deckMetadataDialog.addEventListener('submit', event => { event.preventDefault();
 subjectDialog.addEventListener('click', event => { const action = event.target.dataset.subjectAction; if (action === 'cancel') subjectDialog.hidden = true; if (action === 'save-primary') { activeSet().primarySubject = $('#primarySubjectSelect').value || null; subjectDialog.hidden = true; save(); render(); showToast('Deck subject details saved.'); } if (event.target === subjectDialog) subjectDialog.hidden = true; });
 subjectColoursDialog.addEventListener('click', event => { const button = event.target.closest('[data-subject-colour]'); if (button) applySubjectColour(button.dataset.subjectColour, button.dataset.colour); if (event.target.dataset.subjectColourAction === 'close' || event.target === subjectColoursDialog) subjectColoursDialog.hidden = true; });
 subjectColoursDialog.addEventListener('input', event => { if (event.target.dataset.subjectColourInput) applySubjectColour(event.target.dataset.subjectColourInput, event.target.value); });
-testModeButton.addEventListener('click', () => { state.pendingTestCardIds = null; openTestSetup(); });
 const renderTestQuestionBase = renderTestQuestion;
 renderTestQuestion = function () {
   renderTestQuestionBase();
@@ -1304,5 +1415,11 @@ testMode.addEventListener('change', event => {
   if (event.target.id === 'testTimed') syncTestTimingControls();
   if (event.target.matches('[data-test-deck], [data-test-folder], [data-test-tag], #testQuestionCount, #testCardFilter, #testTimed')) refreshTestPoolNote();
 });
+
+const closeTestModeToDashboardBase = closeTestMode;
+closeTestMode = function () {
+  closeTestModeToDashboardBase();
+  if (testMode.hidden) setAppView('home');
+};
 
 deckSubjectButton.addEventListener('click', event => { event.stopImmediatePropagation(); renderDeckMetadataDialog(); }, true);

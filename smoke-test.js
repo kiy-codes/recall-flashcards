@@ -19,6 +19,16 @@ app.whenReady().then(async () => {
 
         assert(typeof state !== 'undefined', 'App state is unavailable');
         assert(state.sets.length === 1, 'Default study set was not created');
+        assert(document.querySelector('#home') && document.querySelector('#homeStats'), 'Home dashboard did not render on launch');
+        assert(document.querySelector('#homeRecentDecks').textContent.includes('No cards yet'), 'Home dashboard did not show its empty state');
+        assert([...document.querySelectorAll('[data-revision-workspace]')].every(section => section.hidden), 'Home left revision screens visible below the dashboard');
+        click('[data-home-nav="add"]');
+        assert(state.currentView === 'cards' && document.querySelector('#home').hidden && !document.querySelector('#create').hidden, 'Add cards did not open the selected deck directly');
+        click('.brand');
+        assert(state.currentView === 'home' && !document.querySelector('#home').hidden, 'Logo did not return to the dashboard');
+        click('[data-home-nav="library"]');
+        assert(!document.querySelector('#fullLibrary').hidden, 'Library navigation did not open the deck chooser');
+        click('#fullLibraryClose');
         click('#settingsBtn');
         assert(!document.querySelector('#settingsMenu').hidden, 'Settings menu did not open');
         document.querySelector('#themeSelect').value = 'dark';
@@ -48,6 +58,10 @@ app.whenReady().then(async () => {
         document.querySelector('#backInput').value = '1';
         document.querySelector('#addCardForm').requestSubmit();
         assert(state.sets[0].cards.length === 1, 'Manual card creation failed');
+        assert(document.querySelectorAll('#homeStats .home-stat').length === 6, 'Home dashboard did not show all summary cards');
+        assert(document.querySelector('[data-home-deck]'), 'Home dashboard did not show a recent deck');
+        click('[data-home-deck]');
+        assert(state.activeSetId === state.sets[0].id && state.queue.length === 1, 'Starting study from Home did not use the selected deck queue');
 
         document.querySelector('#importInput').value = 'Two - 2\\nThree - 3';
         document.querySelector('#importFormat').value = 'hyphen';
@@ -115,7 +129,7 @@ app.whenReady().then(async () => {
         openSharePreview({ format: 'recall-share-v1', folders: [{ id: 'source-folder', name: 'Shared folder', color: '#2447c2' }], sets: [{ id: 'source-set', name: 'Shared set', folderId: 'source-folder', frontLabel: 'Question', backLabel: 'Answer', cards: [{ front: 'Shared', back: 'Card', tags: ['shared'] }] }] });
         click('[data-import-action="confirm"]');
         assert(state.sets.some(set => set.name === 'Shared set') && state.folders.some(folder => folder.name === 'Shared folder'), 'Shared multi-deck import did not preserve deck and folder data');
-        click('#testModeBtn');
+        click('[data-home-nav="test"]');
         assert(!document.querySelector('#testMode').hidden, 'Test mode setup did not open');
         document.querySelector('#testQuestionCount').value = '2';
         document.querySelector('#testAnswerStyle').value = 'typed';
@@ -143,7 +157,7 @@ app.whenReady().then(async () => {
         assert(state.testHistory.length === 0, 'Saved test deletion failed');
         window.confirm = () => false;
         click('[data-test-action="close"]');
-        click('#testModeBtn');
+        click('[data-home-nav="test"]');
         document.querySelector('#testQuestionCount').value = '1';
         click('[data-test-action="start"]');
         state.activeTest.deadlineAt = new Date(Date.now() - 1).toISOString();
@@ -267,7 +281,7 @@ app.whenReady().then(async () => {
         await wait(80);
         assert(!document.body.classList.contains('focus-study'), 'Fullscreen focus layout did not close');
 
-        click('#libraryTrigger');
+        click('[data-home-nav="library"]');
         click('#newSetBtn');
         assert(!document.querySelector('#libraryDialog').hidden, 'Add Set dialog did not open');
         document.querySelector('#libraryDialogInput').value = 'Biology';
