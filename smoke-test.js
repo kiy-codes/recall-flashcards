@@ -145,6 +145,13 @@ app.whenReady().then(async () => {
         const reviewedShare = state.sets.find(set => set.name === 'Reviewed share');
         assert(reviewedShare && reviewedShare.cards.map(card => card.front).join('|') === 'edited|keep me' && reviewedShare.cards[0].flagged, 'Share import ignored the review screen');
         deleteSet(reviewedShare.id);
+        // Bulk "Move to" must be able to pick any deck, including the first one listed.
+        const movable = state.sets[0].cards.at(-1); click('#selectCardsBtn'); click('[data-select-card="' + movable.id + '"]');
+        const moveSelect = document.querySelector('#bulkMoveDeck'); const moveTarget = state.sets.find(set => set.id === moveSelect.options[1]?.value);
+        assert(moveSelect.value === '' && moveTarget, 'Move-to menu preselected a deck instead of a placeholder');
+        moveSelect.value = moveTarget.id; moveSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        assert(moveTarget.cards.includes(movable) && !state.sets[0].cards.includes(movable), 'Bulk move did not move the card');
+        moveTarget.cards = moveTarget.cards.filter(card => card !== movable); state.sets[0].cards.push(movable); click('#selectCardsBtn'); save(); buildQueue();
         click('#testModeBtn');
         assert(!document.querySelector('#testMode').hidden, 'Test mode setup did not open');
         document.querySelector('#testQuestionCount').value = '2';
@@ -264,7 +271,7 @@ app.whenReady().then(async () => {
         click('[data-completion-action="test"]');
         assert(!testMode.hidden && cardsForTest(testSetupConfig()).length === 1 && cardsForTest(testSetupConfig())[0].id === one.id, 'Test missed cards did not limit Test Mode to the session misses');
         assert(state.sessionHistory.length === historyBeforeCompletion + 1, 'Opening Test Mode did not finish the completed session exactly once');
-        closeTestMode(); state.pendingTestCardIds = null;
+        closeTestMode(); assert(state.pendingTestCardIds === null, 'Closing Test Mode kept the missed-card filter for the next test');
 
         resetStudyRun([one], 'all');
         click('#retryBtn'); await wait(300);
