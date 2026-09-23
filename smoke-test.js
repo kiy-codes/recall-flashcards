@@ -7,7 +7,14 @@ app.setPath('userData', path.join(app.getPath('temp'), `recall-flashcards-smoke-
 const fail = (message) => { throw new Error(message); };
 
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } });
+  const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  // Mirror main.js so exports are checked under the same navigation guards.
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  const consoleProblems = [];
+  window.webContents.on('console-message', (event) => { const message = event.message || ''; if (/Content Security Policy|Refused to/i.test(message)) consoleProblems.push(message); });
+  const downloads = [];
+  window.webContents.session.on('will-download', (event, item) => { downloads.push(item.getFilename()); event.preventDefault(); });
   try {
     await window.loadFile(path.join(__dirname, 'index.html'));
     const result = await window.webContents.executeJavaScript(`
@@ -116,6 +123,15 @@ app.whenReady().then(async () => {
         openSharePreview({ format: 'recall-share-v1', folders: [{ id: 'source-folder', name: 'Shared folder', color: '#2447c2' }], sets: [{ id: 'source-set', name: 'Shared set', folderId: 'source-folder', frontLabel: 'Question', backLabel: 'Answer', cards: [{ front: 'Shared', back: 'Card', tags: ['shared'] }] }] });
         click('[data-import-action="confirm"]');
         assert(state.sets.some(set => set.name === 'Shared set') && state.folders.some(folder => folder.name === 'Shared folder'), 'Shared multi-deck import did not preserve deck and folder data');
+        // Share files are untrusted: folder colours are validated and names always render as text.
+        const hostile = '<img src=x onerror="window.__injected = true">';
+        openSharePreview({ format: 'recall-share-v2', folders: [{ id: 'hostile', name: 'Hostile folder', color: '#123456">' + hostile }], sets: [{ name: 'Hostile ' + hostile, folderId: 'hostile', cards: [{ front: 'x', back: 'y' }] }] });
+        click('[data-import-action="confirm"]');
+        const hostileFolder = state.folders.find(item => item.name === 'Hostile folder'); const hostileDeck = state.sets.find(set => set.name.startsWith('Hostile'));
+        assert(hostileFolder && /^#[0-9a-f]{6}$/i.test(hostileFolder.color), 'Imported folder colour was not validated');
+        state.sessionHistory.push({ id: 'hostile-session', deckId: hostileDeck.id, deckName: hostileDeck.name, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), attempts: 1, correct: 1, retry: 0 }); render();
+        assert(!document.querySelector('#libraryTree img, #progressChart img, .chart-wrap img') && [...document.querySelectorAll('#progressChart title')].some(title => title.textContent.includes('<img')) && !window.__injected, 'Share-file text was rendered as HTML');
+        state.sessionHistory = state.sessionHistory.filter(item => item.id !== 'hostile-session'); deleteSet(hostileDeck.id); deleteFolder(hostileFolder.id);
         click('#testModeBtn');
         assert(!document.querySelector('#testMode').hidden, 'Test mode setup did not open');
         document.querySelector('#testQuestionCount').value = '2';
@@ -331,9 +347,14 @@ app.whenReady().then(async () => {
         deleteFolder(languages.id);
         assert(!state.folders.some(item => item.id === languages.id), 'Folder deletion failed');
 
+        exportDeck(','); exportDeck('\\t'); exportShare();
+        await wait(400);
+
         return 'All automated feature checks passed.';
       })();
     `);
+    if (!downloads.some(name => name.endsWith('.csv')) || !downloads.some(name => name.endsWith('.tsv')) || !downloads.includes('recall-decks.recall')) fail(`Exports did not download: ${JSON.stringify(downloads)}`);
+    if (consoleProblems.length) fail(`Content Security Policy violations:\n${consoleProblems.join('\n')}`);
     console.log(result);
   } catch (error) {
     console.error(error.stack || error);

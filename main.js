@@ -14,8 +14,13 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
+
+  // The app is a single local page: never open new windows or navigate away from it.
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
 
   window.loadFile(path.join(__dirname, 'index.html'));
 }
