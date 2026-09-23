@@ -104,6 +104,10 @@ app.whenReady().then(async () => {
         state.sets[0].tags = cleanTags([...state.sets[0].tags, 'numbers']);
         renameTag('numbers', 'review'); assert(state.sets[0].tags.includes('review'), 'Deck tag rename failed'); deleteTag('review'); assert(!state.sets[0].tags.includes('review'), 'Deck tag deletion failed');
         click('#bulkDuplicateBtn'); assert(state.sets[0].cards.length === 4, 'Bulk duplicate failed'); click('#selectCardsBtn');
+        window.prompt = () => 'fresh tag'; click('#manageTagsBtn'); click('#newTagBtn');
+        assert(state.sets[0].tags.includes('fresh tag') && document.querySelector('[data-delete-tag="fresh tag"]'), 'Tag manager did not create a deck tag');
+        window.confirm = () => true; click('[data-delete-tag="fresh tag"]'); window.confirm = () => false;
+        assert(!state.sets[0].tags.includes('fresh tag'), 'Tag manager did not delete a deck tag'); click('#tagDialogClose');
         assert(findDuplicate({ front: ' one ', back: '1!!!' }) === one, 'Normalised duplicate detection failed');
         assert(parseDelimited('first_side,second_side,tags\\nA,B,"x, y"', ',')[1][2] === 'x, y', 'CSV parser failed quoted fields');
         assert(parseDelimited('first_side\\tsecond_side\\nA\\tB', '\\t').length === 2, 'TSV parser failed');
@@ -176,6 +180,12 @@ app.whenReady().then(async () => {
         updateTestTimer();
         assert(!state.activeTest && state.testHistory.at(-1).finishReason === 'time-expired', 'Timed test did not finish when its countdown expired');
         click('[data-test-action="close"]');
+        click('#testModeBtn'); document.querySelector('#testQuestionCount').value = '1'; document.querySelector('#testAnswerStyle').value = 'choice';
+        click('[data-test-action="start"]');
+        assert(state.activeTest && document.querySelectorAll('[data-test-choice]').length === 4, 'Multiple-choice test did not offer four answers');
+        click('[data-test-choice="0"]');
+        assert(state.activeTest.feedback && state.activeTest.answers.length === 1, 'Multiple-choice answer was not recorded');
+        closeTestMode();
 
         state.shuffled = false; buildQueue(); click('#revealHintBtn');
         assert(document.querySelector('#hintText').textContent === 'The first counting word', 'Study hint did not reveal without flipping the card');
