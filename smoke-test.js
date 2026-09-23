@@ -132,6 +132,15 @@ app.whenReady().then(async () => {
         state.sessionHistory.push({ id: 'hostile-session', deckId: hostileDeck.id, deckName: hostileDeck.name, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), attempts: 1, correct: 1, retry: 0 }); render();
         assert(!document.querySelector('#libraryTree img, #progressChart img, .chart-wrap img') && [...document.querySelectorAll('#progressChart title')].some(title => title.textContent.includes('<img')) && !window.__injected, 'Share-file text was rendered as HTML');
         state.sessionHistory = state.sessionHistory.filter(item => item.id !== 'hostile-session'); deleteSet(hostileDeck.id); deleteFolder(hostileFolder.id);
+        // The review screen decides what a share import adds.
+        openSharePreview({ format: 'recall-share-v2', folders: [], sets: [{ name: 'Reviewed share', cards: [{ front: 'skip me', back: 'a' }, { front: 'edit me', back: 'b', flagged: true }, { front: 'keep me', back: 'c' }] }] });
+        assert(!document.querySelector('#importFlowDestination'), 'Share import showed a destination picker it ignores');
+        const includeBox = document.querySelector('[data-import-include]'); includeBox.checked = false; includeBox.dispatchEvent(new Event('change', { bubbles: true }));
+        const editBox = document.querySelectorAll('[data-import-edit="front"]')[1]; editBox.value = 'edited'; editBox.dispatchEvent(new Event('change', { bubbles: true }));
+        click('[data-import-action="confirm"]');
+        const reviewedShare = state.sets.find(set => set.name === 'Reviewed share');
+        assert(reviewedShare && reviewedShare.cards.map(card => card.front).join('|') === 'edited|keep me' && reviewedShare.cards[0].flagged, 'Share import ignored the review screen');
+        deleteSet(reviewedShare.id);
         click('#testModeBtn');
         assert(!document.querySelector('#testMode').hidden, 'Test mode setup did not open');
         document.querySelector('#testQuestionCount').value = '2';
