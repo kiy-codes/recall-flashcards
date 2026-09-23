@@ -104,15 +104,26 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Put these in ~/.gradle/gradle.properties (never in the repo) before
+        // distributing a locally built release. EAS builds use their own credentials.
+        if (project.hasProperty('RECALL_UPLOAD_STORE_FILE')) {
+            release {
+                storeFile file(RECALL_UPLOAD_STORE_FILE)
+                storePassword RECALL_UPLOAD_STORE_PASSWORD
+                keyAlias RECALL_UPLOAD_KEY_ALIAS
+                keyPassword RECALL_UPLOAD_KEY_PASSWORD
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Without an upload keystore this falls back to the public debug key, which
+            // anyone can use to sign an "update" to the app. See
+            // https://reactnative.dev/docs/signed-apk-android.
+            signingConfig project.hasProperty('RECALL_UPLOAD_STORE_FILE') ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

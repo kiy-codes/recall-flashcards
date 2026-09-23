@@ -1,4 +1,4 @@
-import { answersMatch, applyReview, blankLibrary, filterCards, findDuplicate, importShare, migrateLibrary, normaliseCard, parseDelimited, parsePaste, sessionStats, sharePayload, streaks } from '../src/core';
+import { answersMatch, applyLibraryMutation, applyReview, blankLibrary, filterCards, findDuplicate, importShare, migrateLibrary, normaliseCard, parseDelimited, parsePaste, sessionStats, sharePayload, streaks } from '../src/core';
 
 describe('learning and typed answers', () => {
   test('moves New to Learning then Mastered, and incorrect resets Learning', () => {
@@ -26,5 +26,14 @@ describe('library sharing and progress', () => {
     const payload = sharePayload(library, [library.sets[0].id]); expect(payload.sessions).toBeUndefined(); expect(payload.sets[0].cards).toHaveLength(1);
     const imported = importShare(blankLibrary(), payload, 'copy', 'skip').library; expect(imported.sets.some(set => set.name === 'Words')).toBe(true); expect(imported.folders.some(folder => folder.name === 'Languages')).toBe(true);
   });
-  test('migrates older cards, computes stats and streaks', () => { const migrated = migrateLibrary({ sets: [{ name: 'Old', cards: [{ front: 'A', back: 'B' }] }] }); expect(migrated.sets[0].cards[0].state).toBe('New'); expect(sessionStats([{ attempts: 2, correct: 1 }, { attempts: 2, correct: 2 }])).toMatchObject({ best: 100, change: 50 }); expect(streaks({ '2026-09-19': { reviewed: 1 }, '2026-09-20': { reviewed: 1 } }, new Date('2026-09-20')).current).toBe(2); });
+  test('keeps the library when a mutation returns a push() length, an id or a card', () => {
+    const library = blankLibrary(); library.sets[0].cards.push(normaliseCard({ id: 'c1', front: 'A', back: 'B' }));
+    expect(applyLibraryMutation(library, x => x.sets.push({ ...x.sets[0], id: 'second', name: 'Second' })).sets.map(set => set.name)).toEqual(['My study deck', 'Second']);
+    expect(applyLibraryMutation(library, x => x.sets[0].folderId = 'folder').sets[0].folderId).toBe('folder');
+    expect(applyLibraryMutation(library, x => Object.assign(x.sets[0].cards[0], { state: 'Learning' })).sets[0].cards[0].state).toBe('Learning');
+    expect(library.sets).toHaveLength(1); expect(library.sets[0].cards[0].state).toBe('New');
+  });
+  test('uses a returned library from share imports', () => { const payload = { format: 'recall-mobile-share-v1', folders: [{ id: 'f', name: 'Shared', color: '"><x' }], sets: [{ name: 'Shared deck', folderId: 'f', cards: [null, { front: 'A', back: 'B' }] }] }; const next = applyLibraryMutation(blankLibrary(), x => importShare(x, payload, 'copy', 'skip').library); expect(next.sets.find(set => set.name === 'Shared deck').cards).toHaveLength(1); expect(next.folders[0].color).toBe('#2447c2'); });
+  test('skips null or malformed saved entries instead of failing to load', () => { const migrated = migrateLibrary({ sets: [null, { name: 'Kept', cards: [null, { front: 'A', back: 'B' }] }], folders: [null, { name: 'F', color: 'red' }], sessions: [null, { attempts: 1, correct: 1 }] }); expect(migrated.sets.map(set => set.name)).toEqual(['Kept']); expect(migrated.sets[0].cards).toHaveLength(1); expect(migrated.folders).toHaveLength(1); expect(migrated.folders[0].color).toBe('#2447c2'); expect(migrated.sessions).toHaveLength(1); });
+  test('migrates older cards, computes stats and streaks', () => { const migrated = migrateLibrary({ sets: [{ name: 'Old', cards: [{ front: 'A', back: 'B' }] }] }); expect(migrated.sets[0].cards[0].state).toBe('New'); expect(sessionStats([{ attempts: 2, correct: 1 }, { attempts: 2, correct: 2 }])).toMatchObject({ best: 100, change: 50 }); expect(streaks({ '2026-09-19': { reviewed: 1 }, '2026-09-20': { reviewed: 1 } }, new Date('2026-09-20T12:00:00')).current).toBe(2); });
 });

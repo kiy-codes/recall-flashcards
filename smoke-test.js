@@ -7,7 +7,14 @@ app.setPath('userData', path.join(app.getPath('temp'), `recall-flashcards-smoke-
 const fail = (message) => { throw new Error(message); };
 
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } });
+  const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  // Mirror main.js so exports are checked under the same navigation guards.
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  const consoleProblems = [];
+  window.webContents.on('console-message', (event) => { const message = event.message || ''; if (/Content Security Policy|Refused to/i.test(message)) consoleProblems.push(message); });
+  const downloads = [];
+  window.webContents.session.on('will-download', (event, item) => { downloads.push(item.getFilename()); event.preventDefault(); });
   try {
     await window.loadFile(path.join(__dirname, 'index.html'));
     const result = await window.webContents.executeJavaScript(`
@@ -94,11 +101,19 @@ app.whenReady().then(async () => {
         click('#selectCardsBtn'); click('[data-select-card="' + one.id + '"]');
         window.prompt = () => 'practice'; click('#bulkTagBtn');
         assert(!Object.hasOwn(one, 'tags'), 'Bulk card tag controls should not add per-card tags');
+        state.sets[0].tags = cleanTags([...state.sets[0].tags, 'numbers']);
         renameTag('numbers', 'review'); assert(state.sets[0].tags.includes('review'), 'Deck tag rename failed'); deleteTag('review'); assert(!state.sets[0].tags.includes('review'), 'Deck tag deletion failed');
         click('#bulkDuplicateBtn'); assert(state.sets[0].cards.length === 4, 'Bulk duplicate failed'); click('#selectCardsBtn');
+        window.prompt = () => 'fresh tag'; click('#manageTagsBtn'); click('#newTagBtn');
+        assert(state.sets[0].tags.includes('fresh tag') && document.querySelector('[data-delete-tag="fresh tag"]'), 'Tag manager did not create a deck tag');
+        window.confirm = () => true; click('[data-delete-tag="fresh tag"]'); window.confirm = () => false;
+        assert(!state.sets[0].tags.includes('fresh tag'), 'Tag manager did not delete a deck tag'); click('#tagDialogClose');
         assert(findDuplicate({ front: ' one ', back: '1!!!' }) === one, 'Normalised duplicate detection failed');
         assert(parseDelimited('first_side,second_side,tags\\nA,B,"x, y"', ',')[1][2] === 'x, y', 'CSV parser failed quoted fields');
         assert(parseDelimited('first_side\\tsecond_side\\nA\\tB', '\\t').length === 2, 'TSV parser failed');
+        assert(csvEscape('=HYPERLINK("http://example.com")', ',') === '"\\'=HYPERLINK(""http://example.com"")"' && csvEscape('@SUM(A1)', ',') === "'@SUM(A1)" && csvEscape('plain', ',') === 'plain', 'CSV export did not neutralise formula-like cells');
+        const formulaRoundTrip = rowsToImportDraft(parseDelimited(deckToDelimited({ ...state.sets[0], cards: [{ ...state.sets[0].cards[0], front: '=SUM(A1)', back: '-ing ending' }] }, ','), ','));
+        assert(formulaRoundTrip.rows[0].cells[0] === '=SUM(A1)' && formulaRoundTrip.rows[0].cells[1] === '-ing ending', 'CSV export and re-import changed formula-like text');
         openImportPreview([{ front: 'One', back: '1' }, { front: 'Four', back: '4', tags: ['numbers'] }]);
         document.querySelector('#importFlowDuplicates').value = 'skip'; click('[data-import-action="confirm"]');
         assert(state.sets[0].cards.some(card => card.front === 'Four') && state.sets[0].cards.filter(card => card.front === 'One').length === 2, 'Import preview duplicate decision failed');
@@ -115,6 +130,31 @@ app.whenReady().then(async () => {
         openSharePreview({ format: 'recall-share-v1', folders: [{ id: 'source-folder', name: 'Shared folder', color: '#2447c2' }], sets: [{ id: 'source-set', name: 'Shared set', folderId: 'source-folder', frontLabel: 'Question', backLabel: 'Answer', cards: [{ front: 'Shared', back: 'Card', tags: ['shared'] }] }] });
         click('[data-import-action="confirm"]');
         assert(state.sets.some(set => set.name === 'Shared set') && state.folders.some(folder => folder.name === 'Shared folder'), 'Shared multi-deck import did not preserve deck and folder data');
+        // Share files are untrusted: folder colours are validated and names always render as text.
+        const hostile = '<img src=x onerror="window.__injected = true">';
+        openSharePreview({ format: 'recall-share-v2', folders: [{ id: 'hostile', name: 'Hostile folder', color: '#123456">' + hostile }], sets: [{ name: 'Hostile ' + hostile, folderId: 'hostile', cards: [{ front: 'x', back: 'y' }] }] });
+        click('[data-import-action="confirm"]');
+        const hostileFolder = state.folders.find(item => item.name === 'Hostile folder'); const hostileDeck = state.sets.find(set => set.name.startsWith('Hostile'));
+        assert(hostileFolder && /^#[0-9a-f]{6}$/i.test(hostileFolder.color), 'Imported folder colour was not validated');
+        state.sessionHistory.push({ id: 'hostile-session', deckId: hostileDeck.id, deckName: hostileDeck.name, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), attempts: 1, correct: 1, retry: 0 }); render();
+        assert(!document.querySelector('#libraryTree img, #progressChart img, .chart-wrap img') && [...document.querySelectorAll('#progressChart title')].some(title => title.textContent.includes('<img')) && !window.__injected, 'Share-file text was rendered as HTML');
+        state.sessionHistory = state.sessionHistory.filter(item => item.id !== 'hostile-session'); deleteSet(hostileDeck.id); deleteFolder(hostileFolder.id);
+        // The review screen decides what a share import adds.
+        openSharePreview({ format: 'recall-share-v2', folders: [], sets: [{ name: 'Reviewed share', cards: [{ front: 'skip me', back: 'a' }, { front: 'edit me', back: 'b', flagged: true }, { front: 'keep me', back: 'c' }] }] });
+        assert(!document.querySelector('#importFlowDestination'), 'Share import showed a destination picker it ignores');
+        const includeBox = document.querySelector('[data-import-include]'); includeBox.checked = false; includeBox.dispatchEvent(new Event('change', { bubbles: true }));
+        const editBox = document.querySelectorAll('[data-import-edit="front"]')[1]; editBox.value = 'edited'; editBox.dispatchEvent(new Event('change', { bubbles: true }));
+        click('[data-import-action="confirm"]');
+        const reviewedShare = state.sets.find(set => set.name === 'Reviewed share');
+        assert(reviewedShare && reviewedShare.cards.map(card => card.front).join('|') === 'edited|keep me' && reviewedShare.cards[0].flagged, 'Share import ignored the review screen');
+        deleteSet(reviewedShare.id);
+        // Bulk "Move to" must be able to pick any deck, including the first one listed.
+        const movable = state.sets[0].cards.at(-1); click('#selectCardsBtn'); click('[data-select-card="' + movable.id + '"]');
+        const moveSelect = document.querySelector('#bulkMoveDeck'); const moveTarget = state.sets.find(set => set.id === moveSelect.options[1]?.value);
+        assert(moveSelect.value === '' && moveTarget, 'Move-to menu preselected a deck instead of a placeholder');
+        moveSelect.value = moveTarget.id; moveSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        assert(moveTarget.cards.includes(movable) && !state.sets[0].cards.includes(movable), 'Bulk move did not move the card');
+        moveTarget.cards = moveTarget.cards.filter(card => card !== movable); state.sets[0].cards.push(movable); click('#selectCardsBtn'); save(); buildQueue();
         click('#testModeBtn');
         assert(!document.querySelector('#testMode').hidden, 'Test mode setup did not open');
         document.querySelector('#testQuestionCount').value = '2';
@@ -131,6 +171,7 @@ app.whenReady().then(async () => {
         assert(document.activeElement?.id === 'testTypedInput', 'Next typed Test Mode question did not refocus the answer field');
         click('[data-test-action="skip"]');
         assert(!state.activeTest && state.testHistory.length === 1, 'Completed test was not saved separately');
+        assert(JSON.parse(localStorage.getItem(STORAGE_KEY)).testHistory.every(test => !Object.hasOwn(test, 'pool')), 'Saved tests still store a copy of every card');
         assert(document.querySelector('#testMode').textContent.includes('Review every question'), 'Test results screen did not render complete question review');
         click('[data-test-action="history"]');
         assert(document.querySelector('.test-history-list'), 'Dedicated test history did not open');
@@ -150,6 +191,12 @@ app.whenReady().then(async () => {
         updateTestTimer();
         assert(!state.activeTest && state.testHistory.at(-1).finishReason === 'time-expired', 'Timed test did not finish when its countdown expired');
         click('[data-test-action="close"]');
+        click('#testModeBtn'); document.querySelector('#testQuestionCount').value = '1'; document.querySelector('#testAnswerStyle').value = 'choice';
+        click('[data-test-action="start"]');
+        assert(state.activeTest && document.querySelectorAll('[data-test-choice]').length === 4, 'Multiple-choice test did not offer four answers');
+        click('[data-test-choice="0"]');
+        assert(state.activeTest.feedback && state.activeTest.answers.length === 1, 'Multiple-choice answer was not recorded');
+        closeTestMode();
 
         state.shuffled = false; buildQueue(); click('#revealHintBtn');
         assert(document.querySelector('#hintText').textContent === 'The first counting word', 'Study hint did not reveal without flipping the card');
@@ -227,7 +274,7 @@ app.whenReady().then(async () => {
         click('[data-completion-action="test"]');
         assert(!testMode.hidden && cardsForTest(testSetupConfig()).length === 1 && cardsForTest(testSetupConfig())[0].id === one.id, 'Test missed cards did not limit Test Mode to the session misses');
         assert(state.sessionHistory.length === historyBeforeCompletion + 1, 'Opening Test Mode did not finish the completed session exactly once');
-        closeTestMode(); state.pendingTestCardIds = null;
+        closeTestMode(); assert(state.pendingTestCardIds === null, 'Closing Test Mode kept the missed-card filter for the next test');
 
         resetStudyRun([one], 'all');
         click('#retryBtn'); await wait(300);
@@ -300,9 +347,10 @@ app.whenReady().then(async () => {
         document.querySelector('#libraryDialogInput').value = 'Chemistry';
         click('#libraryDialogSave');
         const chemistry = state.sets.find(item => item.name === 'Chemistry');
-        const defaultSet = state.sets.find(item => item.name === 'My study deck');
+        const ungroupedOrder = () => state.sets.filter(set => !set.folderId).sort((a, b) => a.order - b.order).map(set => set.id);
+        const chemistryIndexBefore = ungroupedOrder().indexOf(chemistry.id);
         click('[data-move-set="' + chemistry.id + '"][data-direction="up"]');
-        assert(chemistry.order < defaultSet.order, 'Manual set reordering failed');
+        assert(ungroupedOrder().indexOf(chemistry.id) === chemistryIndexBefore - 1, 'Manual set reordering failed');
 
         click('#newFolderBtn');
         document.querySelector('#libraryDialogInput').value = 'Languages';
@@ -329,9 +377,33 @@ app.whenReady().then(async () => {
         deleteFolder(languages.id);
         assert(!state.folders.some(item => item.id === languages.id), 'Folder deletion failed');
 
+        // Storage stays bounded, and a full disk must not break studying.
+        state.reviewLog = Array.from({ length: 2100 }, (_, index) => ({ id: 'log-' + index, cardId: one.id, timestamp: new Date().toISOString(), outcome: 'correct' })); save();
+        assert(JSON.parse(localStorage.getItem(STORAGE_KEY)).reviewLog.length === 2000, 'Review log was not capped');
+        resetStudyRun([one], 'all'); const realSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); };
+        click('#correctBtn'); await wait(300);
+        Storage.prototype.setItem = realSetItem;
+        assert(state.correct === 1 && document.querySelector('#progressText').textContent.startsWith('1 /') && document.querySelector('#toast').textContent.includes('could not be saved'), 'A full disk broke the study screen');
+        closeCompletionDialog(); save();
+
+        exportDeck(','); exportDeck('\\t'); exportShare();
+        await wait(400);
+
         return 'All automated feature checks passed.';
       })();
     `);
+    if (!downloads.some(name => name.endsWith('.csv')) || !downloads.some(name => name.endsWith('.tsv')) || !downloads.includes('recall-decks.recall')) fail(`Exports did not download: ${JSON.stringify(downloads)}`);
+    if (consoleProblems.length) fail(`Content Security Policy violations:\n${consoleProblems.join('\n')}`);
+
+    // Saved data that can't be read cleanly must never be deleted.
+    const reload = async (seed) => { await window.webContents.executeJavaScript(`localStorage.clear(); ${seed}; true`); await window.loadFile(path.join(__dirname, 'index.html')); await new Promise(resolve => setTimeout(resolve, 200)); };
+    await reload(`localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: [null, { id: 'a', name: 'Biology', cards: [null, { id: 'c1', front: 'cell', back: 'unit of life' }] }], folders: [null], sessionHistory: [null], testHistory: [null], activeSetId: 'a' }))`);
+    const tolerant = await window.webContents.executeJavaScript(`state.sets.map(set => set.name + ':' + set.cards.length).join()`);
+    if (tolerant !== 'Biology:1') fail(`Null records in saved data lost the library: ${tolerant}`);
+    await reload(`localStorage.setItem(STORAGE_KEY, '{"sets": [{"name": "Biology"')`);
+    const backups = await window.webContents.executeJavaScript(`Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY + '-unreadable-')).map(key => localStorage.getItem(key))`);
+    if (backups.length !== 1 || !backups[0].includes('Biology')) fail('Unreadable saved data was not kept as a backup');
     console.log(result);
   } catch (error) {
     console.error(error.stack || error);
