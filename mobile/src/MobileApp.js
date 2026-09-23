@@ -5,7 +5,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { StatusBar } from 'expo-status-bar';
-import { STORAGE_KEY, activeSet, answersMatch, applyReview, blankLibrary, cleanTags, dateKey, filterCards, findDuplicate, id, importShare, migrateLibrary, normaliseCard, parseDelimited, parsePaste, recordActivity, sessionStats, sharePayload, streaks } from './core';
+import { STORAGE_KEY, activeSet, answersMatch, applyLibraryMutation, applyReview, blankLibrary, cleanTags, dateKey, filterCards, findDuplicate, id, importShare, migrateLibrary, normaliseCard, parseDelimited, parsePaste, recordActivity, sessionStats, sharePayload, streaks } from './core';
 
 const color = { ink:'#122043', paper:'#faf8f3', blue:'#2447c2', aqua:'#71d6c8', line:'#dedbd1', muted:'#69748b', white:'#fffefa' };
 const Button=({children,onPress,quiet,disabled})=><Pressable disabled={disabled} onPress={onPress} style={[ui.button,quiet&&ui.quiet,disabled&&ui.disabled]}><Text style={[ui.buttonText,quiet&&ui.quietText]}>{children}</Text></Pressable>;
@@ -13,7 +13,7 @@ const Chip=({children,on,onPress})=><Pressable onPress={onPress} style={[ui.chip
 const Field=({label,value,set,multi,placeholder})=><View style={ui.field}><Text style={ui.label}>{label}</Text><TextInput value={value} onChangeText={set} multiline={multi} placeholder={placeholder} placeholderTextColor="#9aa3b5" style={[ui.input,multi&&ui.multi]}/></View>;
 const deep=value=>JSON.parse(JSON.stringify(value));
 
-function useLocalLibrary(){const [library,setLibrary]=useState();useEffect(()=>{AsyncStorage.getItem(STORAGE_KEY).then(raw=>setLibrary(migrateLibrary(raw?JSON.parse(raw):null))).catch(()=>setLibrary(blankLibrary()));},[]);const update=mutate=>setLibrary(old=>{const next=deep(old);const result=mutate(next)||next;AsyncStorage.setItem(STORAGE_KEY,JSON.stringify(result));return result;});return [library,update];}
+function useLocalLibrary(){const [library,setLibrary]=useState();useEffect(()=>{AsyncStorage.getItem(STORAGE_KEY).then(async raw=>{try{setLibrary(migrateLibrary(raw?JSON.parse(raw):null));}catch{if(raw)await AsyncStorage.setItem(`${STORAGE_KEY}-unreadable-${Date.now()}`,raw);setLibrary(blankLibrary());}}).catch(()=>setLibrary(blankLibrary()));},[]);const update=mutate=>setLibrary(old=>{const next=applyLibraryMutation(old,mutate);AsyncStorage.setItem(STORAGE_KEY,JSON.stringify(next));return next;});return [library,update];}
 
 function Study({library,update,focus,setFocus}){
  const deck=activeSet(library);const [filter,setFilter]=useState('all');const [tagList,setTagList]=useState([]);const [typed,setTyped]=useState(false);const [ids,setIds]=useState([]);const [position,setPosition]=useState(0);const [flipped,setFlipped]=useState(false);const [showHint,setShowHint]=useState(false);const [value,setValue]=useState('');const [checked,setChecked]=useState(null);const [history,setHistory]=useState([]);const [session,setSession]=useState(null);const offset=useRef(new Animated.Value(0)).current;
