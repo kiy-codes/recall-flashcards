@@ -93,7 +93,11 @@ All existing cards receive those tags, and future cards/imports inherit them. Ch
 
 ## Data and privacy
 
-Recall is local-first. It does not require an account or cloud connection. Your study data is saved in your browser storage on this computer. Export decks or Recall share files if you want a portable backup.
+Recall is local-first. It does not require an account or cloud connection. Your study data is saved in your browser storage on this computer. Optional Supabase accounts provide explicit upload/download of your complete library across browsers or computers. Account & sync also includes full-library backup files and a recovery export before cloud replacements. Deck CSV, TSV and share exports remain available.
+
+See [Optional accounts and cloud backup](docs/CLOUD_SYNC.md) for the verified free-plan assumptions, email confirmation limitations, dashboard steps, SQL policies, environment configuration, conflict choices and tests. Cloud features are disabled until the two public Supabase configuration values are supplied. No hosted service or release is created by this project setup.
+
+For a static Vercel-compatible build, run `npm run build:web` and serve only `dist-web`. Node 22.12 or later is required. Electron continues to start with `npm start`. The static site can reopen offline after its first visit finishes caching.
 
 ## Project layout
 

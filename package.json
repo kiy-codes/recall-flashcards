@@ -6,10 +6,18 @@
   "author": "Recall",
   "license": "MIT",
   "scripts": {
+    "build:client": "node scripts/build.js",
+    "build:web": "node scripts/build.js --web",
+    "build": "npm run build:web",
+    "prestart": "npm run build:client",
     "start": "electron .",
+    "predev": "npm run build:client",
     "dev": "electron .",
-    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js metadata-utils.test.js",
+    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js metadata-utils.test.js sync.test.js sync-sql.test.js",
+    "test:smoke": "node scripts/run-smoke.js",
+    "predist": "npm run build:client",
     "dist": "electron-builder --win nsis",
+    "predist:portable": "npm run build:client",
     "dist:portable": "electron-builder --win portable"
   },
   "build": {
@@ -24,14 +32,23 @@
       "scheduler.js",
       "completion-utils.js",
       "metadata-utils.js",
+      "sync-core.js",
+      "sync-service.js",
+      "account-ui.js",
+      "cloud-client.js",
+      "web-offline.js",
       "main.js",
       "preload.js",
       "package.json",
       "exampleText.txt"
     ],
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "artifactName": "Recall-Flashcards-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -43,7 +60,13 @@
     }
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "electron": "^36.4.0",
-    "electron-builder": "^26.0.12"
-  }
+    "electron-builder": "^26.0.12",
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.1"
+  },
+  "engines": { "node": ">=22.12.0" }
 }

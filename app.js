@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'recall-library-v2';
+let lastSavedLibrary = localStorage.getItem(STORAGE_KEY);
 
 const state = {
   sets: [],
@@ -99,8 +100,33 @@ function applyTheme() {
 }
 function renderKeybinds() { elements.keybindFlip.value = state.keybinds.flip.toUpperCase(); elements.keybindRetry.value = state.keybinds.retry.toUpperCase(); elements.keybindCorrect.value = state.keybinds.correct.toUpperCase(); elements.keybindUndo.value = state.keybinds.undo.toUpperCase(); }
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ sets: state.sets, folders: state.folders, activeSetId: state.activeSetId, sessionHistory: state.sessionHistory, testHistory: state.testHistory, reviewLog: state.reviewLog, currentSession: state.currentSession, activity: state.activity, shuffled: state.shuffled, repeatMissed: state.repeatMissed, studyFilter: state.studyFilter, studyMode: state.studyMode, theme: state.theme, keybinds: state.keybinds, subjectColors: state.subjectColors }));
+  const serialized = JSON.stringify(RecallSyncCore.serializeLibrary(state));
+  localStorage.setItem(STORAGE_KEY, serialized);
+  const changed = serialized !== lastSavedLibrary;
+  lastSavedLibrary = serialized;
+  if (changed) window.dispatchEvent(new Event('recall:library-saved'));
 }
+
+// Cloud code receives only a library adapter, never the mutable application state.
+// Storage is written before reload; a quota failure leaves the old library intact.
+window.RecallLibrary = {
+  read() {
+    if (localStorage.getItem(STORAGE_KEY) !== lastSavedLibrary) throw new Error('Another tab changed this local library. Reload Recall before syncing.');
+    save();
+    return JSON.parse(lastSavedLibrary);
+  },
+  replace(library, expected) {
+    const next = RecallSyncCore.validateLibrary(library);
+    if (!RecallSyncCore.equal(this.read(), expected)) throw new Error('Your local library changed. Start this operation again.');
+    try {
+      localStorage.setItem(RecallSyncCore.RECOVERY_KEY, JSON.stringify({ savedAt: new Date().toISOString(), library: expected }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      throw new Error('There is not enough browser storage to save a recovery copy and replace the library. Export a backup and free browser storage before retrying.');
+    }
+    lastSavedLibrary = JSON.stringify(next);
+  },
+};
 
 function setAppView(view = 'home') {
   state.currentView = view;

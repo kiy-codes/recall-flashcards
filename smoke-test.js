@@ -8,6 +8,7 @@ const fail = (message) => { throw new Error(message); };
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } });
+  window.webContents.session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith('file://') && !details.url.startsWith('blob:') }));
   try {
     await window.loadFile(path.join(__dirname, 'index.html'));
     const result = await window.webContents.executeJavaScript(`
@@ -35,7 +36,8 @@ app.whenReady().then(async () => {
         document.querySelector('#themeSelect').dispatchEvent(new Event('change', { bubbles: true }));
         assert(document.documentElement.dataset.theme === 'dark', 'Dark theme setting did not apply');
         const styleOf = (selector) => getComputedStyle(document.querySelector(selector));
-        assert(styleOf('#toast').backgroundColor === 'rgb(36, 54, 95)', 'Dark toast is not using a readable themed surface');
+        for (let i = 0; i < 100 && styleOf('#toast').backgroundColor !== 'rgb(36, 54, 95)'; i++) await wait(20);
+        assert(styleOf('#toast').backgroundColor === 'rgb(36, 54, 95)', 'Dark toast is not using a readable themed surface: ' + styleOf('#toast').backgroundColor);
         assert(styleOf('#newSetBtn').backgroundColor === 'rgb(23, 34, 59)', 'Dark library actions are not themed');
         assert(styleOf('.library-search').backgroundColor === 'rgb(23, 34, 59)', 'Dark library search is not themed');
         document.querySelector('#themeSelect').value = 'light';
@@ -108,7 +110,7 @@ app.whenReady().then(async () => {
         click('#selectCardsBtn'); click('[data-select-card="' + one.id + '"]');
         window.prompt = () => 'practice'; click('#bulkTagBtn');
         assert(!Object.hasOwn(one, 'tags'), 'Bulk card tag controls should not add per-card tags');
-        renameTag('numbers', 'review'); assert(state.sets[0].tags.includes('review'), 'Deck tag rename failed'); deleteTag('review'); assert(!state.sets[0].tags.includes('review'), 'Deck tag deletion failed');
+        renameTag('Biology: Counting', 'review'); assert(state.sets[0].tags.includes('review'), 'Deck tag rename failed'); deleteTag('review'); assert(!state.sets[0].tags.includes('review'), 'Deck tag deletion failed');
         click('#bulkDuplicateBtn'); assert(state.sets[0].cards.length === 4, 'Bulk duplicate failed'); click('#selectCardsBtn');
         assert(findDuplicate({ front: ' one ', back: '1!!!' }) === one, 'Normalised duplicate detection failed');
         assert(parseDelimited('first_side,second_side,tags\\nA,B,"x, y"', ',')[1][2] === 'x, y', 'CSV parser failed quoted fields');
@@ -314,9 +316,10 @@ app.whenReady().then(async () => {
         document.querySelector('#libraryDialogInput').value = 'Chemistry';
         click('#libraryDialogSave');
         const chemistry = state.sets.find(item => item.name === 'Chemistry');
-        const defaultSet = state.sets.find(item => item.name === 'My study deck');
+        const chemistrySiblings = state.sets.filter(item => item.folderId === chemistry.folderId).sort((a, b) => a.order - b.order);
+        const precedingSet = chemistrySiblings[chemistrySiblings.indexOf(chemistry) - 1];
         click('[data-move-set="' + chemistry.id + '"][data-direction="up"]');
-        assert(chemistry.order < defaultSet.order, 'Manual set reordering failed');
+        assert(precedingSet && chemistry.order < precedingSet.order, 'Manual set reordering failed');
 
         click('#newFolderBtn');
         document.querySelector('#libraryDialogInput').value = 'Languages';
@@ -352,6 +355,6 @@ app.whenReady().then(async () => {
     process.exitCode = 1;
   } finally {
     window.destroy();
-    app.quit();
+    app.exit(process.exitCode || 0);
   }
 });

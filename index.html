@@ -31,6 +31,7 @@
           <span class="summary-dot">•</span>
           <span id="cardCount">0 cards</span>
         </div>
+        <button class="text-button" id="accountBtn" type="button" aria-haspopup="dialog">Account &amp; sync</button>
         <button class="text-button" id="attemptsTrigger" type="button">Attempts</button>
         <button class="text-button" id="clearProgressBtn" type="button">Reset progress</button>
         <div class="settings-control"><button class="settings-button" id="settingsBtn" type="button" aria-label="Settings" title="Settings" aria-expanded="false"><span aria-hidden="true">&#9881;</span></button><div class="settings-menu" id="settingsMenu" hidden><p class="control-label">Appearance</p><label class="settings-select">Theme<select id="themeSelect"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="control-label">Keyboard shortcuts</p><p class="settings-help">Click a field, then press a key. Arrow keys always work too.</p><label class="keybind-field">Flip card<input id="keybindFlip" readonly /></label><label class="keybind-field">Needs practice<input id="keybindRetry" readonly /></label><label class="keybind-field">Mark correct<input id="keybindCorrect" readonly /></label><label class="keybind-field">Undo<input id="keybindUndo" readonly /></label><button class="settings-reset" id="resetKeybindsBtn" type="button">Reset shortcuts</button></div></div>
@@ -253,6 +254,11 @@
     <script src="scheduler.js"></script>
     <script src="completion-utils.js"></script>
     <script src="metadata-utils.js"></script>
+    <script src="sync-core.js"></script>
     <script src="app.js"></script>
+    <script src="cloud-client.js"></script>
+    <script src="sync-service.js"></script>
+    <script src="account-ui.js"></script>
+    <script src="web-offline.js"></script>
   </body>
 </html>

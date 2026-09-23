@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased - Optional accounts and cloud backup
+
+- Added optional Supabase email/password accounts, session restoration, manual upload/download, sync status and per-account last-sync time.
+- Added revision-checked cloud writes, explicit overwrite choices, conservative safe merging, local recovery copies, and full-library backup files.
+- Kept the existing localStorage library and offline study workflow, with a cached static website for offline reopening.
+- Added Free-plan setup documentation, per-user RLS SQL, ignored environment configuration, static Vercel output and bundled Electron client support.
+- Added credential-free unit, PostgreSQL policy and Electron/web smoke checks; corrected stale assertions and failure exit reporting in the existing smoke harness.
+
 ## 1.0.2 - Navigation and interface polish
 
 - Added a focused Home dashboard as the app’s starting screen.

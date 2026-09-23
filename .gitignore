@@ -16,6 +16,10 @@ archive/internal-development-builds/*
 .env.*
 !.env.example
 
+# Generated public client and static web output
+cloud-client.js
+dist-web/
+
 # Temporary Codex attachments and screenshots
 .codex-remote-attachments/
 

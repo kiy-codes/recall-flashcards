@@ -485,6 +485,28 @@ body.focus-study .home-dashboard { display: none; }
 .settings-button { display: grid; width: 36px; height: 36px; min-height: 36px; place-items: center; padding: 0; border-radius: 50%; }
 .settings-button span { font-size: 16px; line-height: 1; }
 .settings-menu { right: 0; left: auto; }
+
+/* Optional account and explicit backup controls */
+#accountBtn { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-dialog { width: min(650px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 26px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: #faf8f3; box-shadow: 0 22px 90px #0005; }
+.account-dialog::backdrop { background: #101b3b80; }
+.account-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.account-head h2 { margin: 6px 0 12px; font-size: 28px; }
+.account-dialog h3 { margin: 0 0 10px; font-size: 18px; }
+.account-dialog p { overflow-wrap: anywhere; line-height: 1.5; }
+.account-help { color: var(--muted); font-size: 12px; }
+#accountAuthForm { display: grid; gap: 12px; margin: 18px 0; }
+#accountAuthForm label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; }
+#accountAuthForm input { width: 100%; padding: 11px; border: 1px solid var(--line); border-radius: 5px; color: inherit; background: transparent; }
+.account-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.account-actions button { white-space: normal; }
+.account-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.account-choice,.account-backups { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); }
+.account-notice { padding: 10px; border-radius: 5px; background: #a56b1d15; font-size: 12px; }
+.account-error { color: #a22727; padding: 10px; border: 1px solid currentColor; border-radius: 5px; font-size: 13px; }
+.account-dialog [hidden] { display: none !important; }
+html[data-theme="dark"] .account-dialog { background: var(--surface); color: var(--text-strong); }
+html[data-theme="dark"] .account-error { color: #ffb1b1; }
 @media (max-width: 1100px) {
   .topbar { gap: 6px; }
   .deck-summary { margin-left: 4px; }
