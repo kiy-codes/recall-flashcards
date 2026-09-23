@@ -94,6 +94,7 @@ app.whenReady().then(async () => {
         click('#selectCardsBtn'); click('[data-select-card="' + one.id + '"]');
         window.prompt = () => 'practice'; click('#bulkTagBtn');
         assert(!Object.hasOwn(one, 'tags'), 'Bulk card tag controls should not add per-card tags');
+        state.sets[0].tags = cleanTags([...state.sets[0].tags, 'numbers']);
         renameTag('numbers', 'review'); assert(state.sets[0].tags.includes('review'), 'Deck tag rename failed'); deleteTag('review'); assert(!state.sets[0].tags.includes('review'), 'Deck tag deletion failed');
         click('#bulkDuplicateBtn'); assert(state.sets[0].cards.length === 4, 'Bulk duplicate failed'); click('#selectCardsBtn');
         assert(findDuplicate({ front: ' one ', back: '1!!!' }) === one, 'Normalised duplicate detection failed');
@@ -300,9 +301,10 @@ app.whenReady().then(async () => {
         document.querySelector('#libraryDialogInput').value = 'Chemistry';
         click('#libraryDialogSave');
         const chemistry = state.sets.find(item => item.name === 'Chemistry');
-        const defaultSet = state.sets.find(item => item.name === 'My study deck');
+        const ungroupedOrder = () => state.sets.filter(set => !set.folderId).sort((a, b) => a.order - b.order).map(set => set.id);
+        const chemistryIndexBefore = ungroupedOrder().indexOf(chemistry.id);
         click('[data-move-set="' + chemistry.id + '"][data-direction="up"]');
-        assert(chemistry.order < defaultSet.order, 'Manual set reordering failed');
+        assert(ungroupedOrder().indexOf(chemistry.id) === chemistryIndexBefore - 1, 'Manual set reordering failed');
 
         click('#newFolderBtn');
         document.querySelector('#libraryDialogInput').value = 'Languages';
