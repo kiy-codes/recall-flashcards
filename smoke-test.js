@@ -111,6 +111,9 @@ app.whenReady().then(async () => {
         assert(findDuplicate({ front: ' one ', back: '1!!!' }) === one, 'Normalised duplicate detection failed');
         assert(parseDelimited('first_side,second_side,tags\\nA,B,"x, y"', ',')[1][2] === 'x, y', 'CSV parser failed quoted fields');
         assert(parseDelimited('first_side\\tsecond_side\\nA\\tB', '\\t').length === 2, 'TSV parser failed');
+        assert(csvEscape('=HYPERLINK("http://example.com")', ',') === '"\\'=HYPERLINK(""http://example.com"")"' && csvEscape('@SUM(A1)', ',') === "'@SUM(A1)" && csvEscape('plain', ',') === 'plain', 'CSV export did not neutralise formula-like cells');
+        const formulaRoundTrip = rowsToImportDraft(parseDelimited(deckToDelimited({ ...state.sets[0], cards: [{ ...state.sets[0].cards[0], front: '=SUM(A1)', back: '-ing ending' }] }, ','), ','));
+        assert(formulaRoundTrip.rows[0].cells[0] === '=SUM(A1)' && formulaRoundTrip.rows[0].cells[1] === '-ing ending', 'CSV export and re-import changed formula-like text');
         openImportPreview([{ front: 'One', back: '1' }, { front: 'Four', back: '4', tags: ['numbers'] }]);
         document.querySelector('#importFlowDuplicates').value = 'skip'; click('[data-import-action="confirm"]');
         assert(state.sets[0].cards.some(card => card.front === 'Four') && state.sets[0].cards.filter(card => card.front === 'One').length === 2, 'Import preview duplicate decision failed');

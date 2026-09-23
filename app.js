@@ -588,7 +588,7 @@ function parseDelimited(text, delimiter) {
   row.push(value); if (row.some(cell => cell.trim())) rows.push(row); return rows;
 }
 function rowsToImportDraft(rows) {
-  const headers = rows[0]?.map((value, index) => String(value || '').trim() || `Column ${index + 1}`) || []; const data = rows.slice(1).map((cells, index) => ({ id: makeId(), cells, include: true, sourceRow: index + 2, overrides: {} }));
+  const headers = rows[0]?.map((value, index) => String(value || '').trim() || `Column ${index + 1}`) || []; const data = rows.slice(1).map((cells, index) => ({ id: makeId(), cells: cells.map(cell => cell.startsWith("'") && FORMULA_START.test(cell.slice(1)) ? cell.slice(1) : cell), include: true, sourceRow: index + 2, overrides: {} }));
   const mapped = RecallMetadata.suggestImportMappings(headers);
   const find = pattern => headers.findIndex(header => pattern.test(header.toLocaleLowerCase()));
   return { kind: 'cards', headers, rows: data, deckMetadata: { subject: find(/deck_?subject|^subject$/), domain: find(/deck_?domain|^domain$/), languageCode: find(/language_?code/), languageName: find(/language_?name/), tags: mapped.tags }, defaults: mapped, destination: 'active', deckName: '', metadata: null };
@@ -652,7 +652,10 @@ function renderImportFlow() {
 }
 function renderImportPreview() { renderImportFlow(); }
 function closeImportPreview() { elements.importPreview.hidden = true; state.importDraft = null; }
-function csvEscape(value, delimiter) { const text = String(value ?? ''); return text.includes('"') || text.includes(delimiter) || /[\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
+// Spreadsheet apps run a cell starting with = + - @ as a formula; a leading ' keeps it text
+// there, and rowsToImportDraft() removes it again when the file comes back into Recall.
+const FORMULA_START = /^[=+\-@\t\r]/;
+function csvEscape(value, delimiter) { const raw = String(value ?? ''); const text = FORMULA_START.test(raw) ? `'${raw}` : raw; return text.includes('"') || text.includes(delimiter) || /[\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; }
 function deckToDelimited(set, delimiter) { return [EXPORT_COLUMNS, ...set.cards.map(card => [card.front, card.back, set.subject, set.domain, set.language?.code || '', set.language?.name || '', set.tags.join(', '), card.notes, card.hint, card.flagged, card.state, card.missed, card.correctStreak, card.reviewCount, card.wordInfo?.gender || 'unknown', card.wordInfo?.originalMarker || '', card.wordInfo?.partOfSpeech || '', (card.acceptedAnswers || []).join(', ')])].map(row => row.map(value => csvEscape(value, delimiter)).join(delimiter)).join('\r\n'); }
 function downloadLocalFile(name, content, type) { const url = URL.createObjectURL(new Blob([content], { type })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 function exportDeck(delimiter) { const set = activeSet(); if (!set) return; const ext = delimiter === '\t' ? 'tsv' : 'csv'; downloadLocalFile(`${set.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'deck'}.${ext}`, deckToDelimited(set, delimiter), delimiter === '\t' ? 'text/tab-separated-values' : 'text/csv'); showToast(`${set.name} exported as ${ext.toUpperCase()}.`); }
