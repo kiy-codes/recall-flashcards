@@ -1,6 +1,6 @@
 # Recall Flashcards
 
-**v1.0.0 — Initial public release**
+**v1.1.0 — Optional accounts and cloud backup**
 
 Recall is a calm, local-first flashcard app for Windows. It is built with Electron and keeps decks, folders, cards, learning progress, session history, tests, and preferences on the computer running the app.
 
@@ -21,6 +21,7 @@ Recall is a calm, local-first flashcard app for Windows. It is built with Electr
 - Add optional word details such as grammatical gender, source markers, part of speech, and accepted alternatives. Language decks can offer a gender quiz where the data supports it.
 - Sort Library decks by Subject, name, card count, or manual order.
 - Choose light, dark, or system theme and set subject colours locally.
+- Optionally sign in with a Supabase email/password account and manually upload or download a full-library cloud snapshot. Local study remains available offline; sync always asks before replacing data.
 
 ## Run locally
 
@@ -93,9 +94,9 @@ All existing cards receive those tags, and future cards/imports inherit them. Ch
 
 ## Data and privacy
 
-Recall is local-first. It does not require an account or cloud connection. Your study data is saved in your browser storage on this computer. Optional Supabase accounts provide explicit upload/download of your complete library across browsers or computers. Account & sync also includes full-library backup files and a recovery export before cloud replacements. Deck CSV, TSV and share exports remain available.
+Recall is local-first. It does not require an account or cloud connection. Your study data is saved in local browser storage on this computer. Optional Supabase accounts provide explicit upload/download of your complete library across browsers or computers. Account & sync includes full-library backup files and a recovery export before cloud replacements. Deck CSV, TSV and share exports remain available.
 
-See [Optional accounts and cloud backup](docs/CLOUD_SYNC.md) for the verified free-plan assumptions, email confirmation limitations, dashboard steps, SQL policies, environment configuration, conflict choices and tests. Cloud features are disabled until the two public Supabase configuration values are supplied. No hosted service or release is created by this project setup.
+See [Optional accounts and cloud backup](docs/CLOUD_SYNC.md) for the verified free-plan assumptions, email confirmation limitations, dashboard steps, SQL policies, environment configuration, and conflict choices. Cloud features are disabled until the two public Supabase configuration values are supplied. No paid service is required; review the free-plan limits and assumptions before configuring a project.
 
 For a static Vercel-compatible build, run `npm run build:web` and serve only `dist-web`. Node 22.12 or later is required. Electron continues to start with `npm start`. The static site can reopen offline after its first visit finishes caching.
 
@@ -111,6 +112,10 @@ For a static Vercel-compatible build, run `npm run build:web` and serve only `di
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the app's full version history. It is maintained alongside the code, independently of GitHub Releases.
+
+## Get the Windows release
+
+Download **Recall-Flashcards-Setup-1.1.0.exe** from the [GitHub Releases page](https://github.com/kiy-codes/recall-flashcards/releases). Install it, then launch Recall Flashcards from the Start menu or desktop. Cloud accounts are optional and require your own Supabase project configuration; the release works locally without it.
 
 ## Very basic instructions
 

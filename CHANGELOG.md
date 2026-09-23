@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - Optional accounts and cloud backup
+## 1.1.0 - Optional accounts and cloud backup (2026-09-23)
 
 - Added optional Supabase email/password accounts, session restoration, manual upload/download, sync status and per-account last-sync time.
 - Added revision-checked cloud writes, explicit overwrite choices, conservative safe merging, local recovery copies, and full-library backup files.
