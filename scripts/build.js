@@ -5,7 +5,7 @@ const { createHash } = require('node:crypto');
 const esbuild = require('esbuild');
 const { validateConfig } = require('../sync-core');
 const root = path.resolve(__dirname, '..');
-const WEB_FILES = ['index.html', 'styles.css', 'app.js', 'test-utils.js', 'subject-utils.js', 'scheduler.js', 'completion-utils.js', 'metadata-utils.js', 'sync-core.js', 'sync-service.js', 'share-core.js', 'share-service.js', 'account-ui.js', 'share-ui.js', 'cloud-client.js', 'web-offline.js', 'exampleText.txt'];
+const WEB_FILES = ['index.html', 'styles.css', 'app.js', 'test-utils.js', 'subject-utils.js', 'scheduler.js', 'completion-utils.js', 'metadata-utils.js', 'ai-evaluator.js', 'sync-core.js', 'sync-service.js', 'share-core.js', 'share-service.js', 'account-ui.js', 'share-ui.js', 'cloud-client.js', 'web-offline.js', 'exampleText.txt'];
 
 function readConfig(env = process.env) {
   let local = {};

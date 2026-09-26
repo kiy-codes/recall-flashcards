@@ -48,7 +48,7 @@ function localEnvironment(env = process.env) {
   // Keep download/proxy/cache settings, but remove signing and publishing credentials.
   return {
     ...Object.fromEntries(Object.entries(env).filter(([key]) =>
-      !/^(CSC_|WIN_CSC_|APPLE_|GH_|GITHUB_|BT_|KEYCHAIN_|AZURE_|AWS_|SUPABASE_|RECALL_RELEASE_)/i.test(key))),
+      !/^(CSC_|WIN_CSC_|APPLE_|GH_|GITHUB_|BT_|KEYCHAIN_|AZURE_|AWS_|SUPABASE_|GROQ_|RECALL_RELEASE_)/i.test(key))),
     CSC_IDENTITY_AUTO_DISCOVERY: 'false',
   };
 }

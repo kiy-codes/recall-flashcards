@@ -19,9 +19,11 @@
     const answers = attempt.answers || []; const total = attempt.questions?.length || 0;
     const correct = answers.filter(answer => answer.result === 'correct').length;
     const skipped = answers.filter(answer => answer.result === 'skipped').length;
-    const answered = answers.filter(answer => answer.result === 'correct' || answer.result === 'incorrect').length;
+    const partial = answers.filter(answer => answer.result === 'partially_correct').length;
+    const answered = answers.filter(answer => ['correct', 'partially_correct', 'incorrect'].includes(answer.result)).length;
+    const points = answers.reduce((sum, answer) => sum + (answer.result === 'correct' ? 100 : answer.result === 'partially_correct' ? Math.max(1, Math.min(79, Number(answer.score) || 0)) : 0), 0);
     const elapsedMs = Math.max(0, new Date(attempt.endedAt || Date.now()) - new Date(attempt.startedAt || Date.now()));
-    return { total, correct, incorrect: answers.filter(answer => answer.result === 'incorrect').length, skipped, unanswered: Math.max(0, total - answered - skipped), percentage: total ? Math.round(correct / total * 100) : 0, elapsedMs, averageMs: answered || skipped ? Math.round(elapsedMs / (answered + skipped)) : 0 };
+    return { total, correct, partial, points, incorrect: answers.filter(answer => answer.result === 'incorrect').length, skipped, unanswered: Math.max(0, total - answered - skipped), percentage: total ? Math.round(points / total) : 0, elapsedMs, averageMs: answered || skipped ? Math.round(elapsedMs / (answered + skipped)) : 0 };
   };
   const missedQuestions = attempt => (attempt.answers || []).filter(answer => answer.result !== 'correct');
   const reviewItems = attempt => (attempt.questions || []).map(question => {

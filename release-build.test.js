@@ -37,7 +37,7 @@ test('release cloud configuration requires opt-in and rejects privileged keys', 
 test('builder child environment excludes signing and upload credentials without changing the caller', () => {
   const env = { PATH: 'tools', HTTPS_PROXY: 'proxy', CSC_LINK: 'private', WIN_CSC_LINK: 'private',
     APPLE_API_KEY: 'private', GH_TOKEN: 'private', GITHUB_TOKEN: 'private', AZURE_TOKEN: 'private',
-    AWS_SECRET_ACCESS_KEY: 'private', SUPABASE_ANON_KEY: 'private' };
+    AWS_SECRET_ACCESS_KEY: 'private', SUPABASE_ANON_KEY: 'private', GROQ_API_KEY: 'private', GROQ_MODEL: 'private' };
   assert.deepEqual(localEnvironment(env), { PATH: 'tools', HTTPS_PROXY: 'proxy', CSC_IDENTITY_AUTO_DISCOVERY: 'false' });
   assert.equal(env.CSC_LINK, 'private');
 });

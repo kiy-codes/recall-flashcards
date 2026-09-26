@@ -36,6 +36,12 @@ app.whenReady().then(async () => {
         click('#fullLibraryClose');
         click('#settingsBtn');
         assert(!document.querySelector('#settingsMenu').hidden, 'Settings menu did not open');
+        const aiToggle = document.querySelector('#aiEvaluationToggle');
+        assert(aiToggle && !aiToggle.checked, 'AI evaluation must start disabled');
+        aiToggle.checked = true; aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        assert(state.aiEnabled && localStorage.getItem('recall-ai-enabled-v1') === 'true', 'AI setting did not persist locally');
+        aiToggle.checked = false; aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        assert(!state.aiEnabled, 'AI setting did not turn off');
         document.querySelector('#themeSelect').value = 'dark';
         document.querySelector('#themeSelect').dispatchEvent(new Event('change', { bubbles: true }));
         assert(document.documentElement.dataset.theme === 'dark', 'Dark theme setting did not apply');
@@ -144,6 +150,7 @@ app.whenReady().then(async () => {
         document.querySelector('#testAnswerStyle').value = 'typed';
         click('[data-test-action="start"]');
         assert(state.activeTest && state.activeTest.questions.length === 2, 'Test mode did not select a unique question set');
+        assert(state.activeTest.questions.every(question => question.subject === 'Biology'), 'Test questions lost their subject for AI guidance');
         await wait(0);
         assert(document.activeElement?.id === 'testTypedInput', 'Typed Test Mode answer field did not receive focus');
         document.querySelector('#testTypedInput').value = testAnswerValue(activeTestQuestion());
@@ -380,6 +387,50 @@ app.whenReady().then(async () => {
         try { openSharePreview({ format: 'recall-share-v2', sets: [{ name: 'Bad', cards: Array(2001).fill({ front: 'a', back: 'b' }) }] }); } catch { rejectedShare = true; }
         assert(rejectedShare, 'Oversized share file was accepted');
         assert(csvEscape('=HYPERLINK("https://evil.example")', ',').replace(/^"/, '').startsWith("'"), 'CSV export did not neutralise spreadsheet formulas');
+
+        const previousCloud = window.RecallCloudClient;
+        const previousAI = state.aiEnabled;
+        let aiCalls = 0;
+        const aiReplies = [
+          { result: 'correct', score: 95, feedback: 'The meaning is equivalent.', missing_points: [], confidence: 0.9 },
+          { result: 'partially_correct', score: 55, feedback: 'One key idea is missing.', missing_points: ['membrane'], confidence: 0.8 },
+          { result: 'incorrect', score: 0, feedback: 'This does not match.', missing_points: [], confidence: 0.9 },
+        ];
+        window.RecallCloudClient = { enabled: true, create: () => ({
+          auth: { getSession: async () => ({ data: { session: { access_token: 'test-session' } } }) },
+          functions: { invoke: async (name, options) => { aiCalls++; assert(name === 'evaluate-answer' && Object.keys(options.body).length === 7, 'Appeal did not use the allowlisted Edge Function request'); return { data: aiReplies.shift(), error: null }; } },
+        }) };
+        state.aiEnabled = true;
+        state.activeSetId = state.sets[0].id; state.studyMode = 'typed'; state.startSide = 'front'; state.shuffled = false;
+        resetStudyRun([one], 'all');
+        document.querySelector('#typedAnswerInput').value = 'different meaning';
+        document.querySelector('#typedAnswerForm').requestSubmit();
+        assert(state.typedChecked.originalResult === 'incorrect' && aiCalls === 0 && document.querySelector('#typedAppeal [data-appeal-answer]'), 'Local result did not precede optional appeal');
+        click('#typedAppeal [data-appeal-answer]');
+        assert(document.querySelector('#typedAppeal').textContent.includes('Checking appeal'), 'Checking appeal state was not shown');
+        await wait(20);
+        assert(state.typedChecked.result === 'correct' && state.typedChecked.originalResult === 'incorrect' && document.querySelector('#typedAppeal').textContent.includes('Appeal accepted') && aiCalls === 1, 'Accepted appeal did not preserve local result and grant correct credit: ' + JSON.stringify({ checked: state.typedChecked, calls: aiCalls, text: document.querySelector('#typedAppeal').textContent }));
+        assert(!document.querySelector('#typedAppeal [data-appeal-answer]'), 'An answer could be appealed twice');
+        document.querySelector('#typedAnswerForm').requestSubmit(); await wait(300);
+        assert(state.reviewLog.at(-1).outcome === 'correct' && state.reviewLog.at(-1).answerResult === 'correct', 'Accepted appeal did not schedule as correct');
+        undoReview();
+        document.querySelector('#typedAnswerInput').value = 'different meaning'; document.querySelector('#typedAnswerForm').requestSubmit();
+        click('#typedAppeal [data-appeal-answer]');
+        assert(aiCalls === 1 && document.querySelector('#typedAppeal').textContent.includes('already appealed'), 'Undo allowed a repeated appeal for the same answer');
+        closeCompletionDialog();
+        resetStudyRun([one], 'all');
+        document.querySelector('#typedAnswerInput').value = 'another wrong meaning';
+        document.querySelector('#typedAnswerForm').requestSubmit(); click('#typedAppeal [data-appeal-answer]'); await wait(20);
+        assert(state.typedChecked.result === 'partially_correct' && !state.typedChecked.accepted && document.querySelector('#typedAppeal').textContent.includes('Appeal partially accepted'), 'Partial appeal became full credit');
+        document.querySelector('#typedAnswerForm').requestSubmit(); await wait(300);
+        assert(state.reviewLog.at(-1).outcome === 'retry' && state.reviewLog.at(-1).answerResult === 'partially_correct' && state.currentSession.partialPoints === .55, 'Partial appeal did not preserve a due review and fractional credit');
+        assert(document.querySelector('#sessionScore').textContent === '55%' && document.querySelector('#completionDialog').textContent.includes('Partial'), 'Partial study credit did not reach the session summary');
+        click('[data-home-nav="test"]'); document.querySelector('#testQuestionCount').value = '1'; document.querySelector('#testAnswerStyle').value = 'typed'; click('[data-test-action="start"]');
+        document.querySelector('#testTypedInput').value = 'unrelated answer'; document.querySelector('#testTypedForm').requestSubmit();
+        assert(state.activeTest.feedback.originalResult === 'incorrect' && aiCalls === 2 && document.querySelector('[data-test-appeal]'), 'Test Mode called AI before appeal');
+        click('[data-test-appeal]'); await wait(20);
+        assert(state.activeTest.feedback.result === 'incorrect' && document.querySelector('.test-appeal').textContent.includes('Appeal rejected') && aiCalls === 3, 'Rejected test appeal changed the local grade');
+        window.RecallCloudClient = previousCloud; state.aiEnabled = previousAI;
 
         return 'All automated feature checks passed.';
       })();

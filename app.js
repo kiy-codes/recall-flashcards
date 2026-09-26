@@ -25,6 +25,9 @@ const state = {
   studyFilter: 'all',
   studyMode: 'flip',
   typedChecked: false,
+  aiPending: false,
+  appealedAnswers: new Set(),
+  aiEnabled: localStorage.getItem('recall-ai-enabled-v1') === 'true',
   activity: {},
   selectedCardIds: new Set(),
   selectingCards: false,
@@ -60,6 +63,7 @@ elements.shareDeckSummary = $('#shareDeckSummary');
 elements.tagFilterOptions = $('#tagFilterOptions');
 elements.tagFilterSummary = $('#tagFilterSummary');
 elements.settingsBtn = $('#settingsBtn'); elements.settingsMenu = $('#settingsMenu'); elements.themeSelect = $('#themeSelect'); elements.keybindFlip = $('#keybindFlip'); elements.keybindRetry = $('#keybindRetry'); elements.keybindCorrect = $('#keybindCorrect'); elements.keybindUndo = $('#keybindUndo'); elements.resetKeybinds = $('#resetKeybindsBtn');
+elements.aiToggle = $('#aiEvaluationToggle'); elements.aiToggle.checked = state.aiEnabled;
 const makeId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const FOLDER_COLORS = ['#2447c2', '#bc5b55', '#3c9a88', '#a56b1d', '#7955ad', '#437cba'];
 const safeFolderColor = (value, fallback = '#a0a6b4') => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
@@ -217,7 +221,7 @@ function buildQueue() {
   state.testStudyContext = null;
   const eligible = cardsForStudy();
   state.queue = state.shuffled ? shuffledCopy(eligible) : [...eligible];
-  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
+  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.appealedAnswers.clear(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
   startNewSession();
   render();
 }
@@ -226,7 +230,7 @@ function resetStudyRun(cards, filter = state.studyFilter) {
   finishCurrentSession();
   state.testStudyContext = null;
   state.queue = state.shuffled ? shuffledCopy(cards) : [...cards];
-  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
+  state.currentIndex = 0; state.flipped = false; state.correct = 0; state.retry = 0; state.animating = false; state.history = []; state.sessionRepeatedIds = new Set(); state.appealedAnswers.clear(); state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now();
   startNewSession();
   state.currentSession.filter = filter;
   render();
@@ -244,14 +248,14 @@ function render() {
   elements.progressText.textContent = `${Math.min(completed, total)} / ${total}`;
   elements.progressBar.style.width = total ? `${(Math.min(completed, total) / total) * 100}%` : '0%';
   elements.correctCount.textContent = state.correct; elements.retryCount.textContent = state.retry;
-  elements.sessionScore.textContent = completed ? `${Math.round((state.correct / completed) * 100)}%` : '—';
+  elements.sessionScore.textContent = completed ? `${Math.round(((state.correct + (state.currentSession?.partialPoints || 0)) / completed) * 100)}%` : '—';
   elements.clearDeck.disabled = !activeCards().length; elements.emptyDeck.hidden = activeCards().length > 0;
   const streak = studyStreaks(); elements.currentStreak.textContent = `${streak.current} ${streak.current === 1 ? 'day' : 'days'}`; elements.longestStreak.textContent = `Best: ${streak.longest}`;
   elements.studyFilter.value = state.studyFilter; elements.studyMode.value = state.studyMode;
   elements.card.classList.toggle('empty', !card); elements.correct.disabled = !card || state.animating || state.studyMode === 'typed'; elements.retry.disabled = !card || state.animating || state.studyMode === 'typed'; elements.undo.disabled = !state.history.length || state.animating;
   elements.flag.disabled = !card || state.animating; elements.flag.textContent = card?.flagged ? '★ Flagged' : '☆ Flag'; elements.cardState.textContent = card?.state?.toUpperCase() || 'READY'; elements.cardState.className = `card-state ${(card?.state || 'ready').toLowerCase()}`;
   elements.studyHint.hidden = !card?.hint; elements.revealHint.textContent = state.hintRevealed ? 'Hide hint' : 'Show hint'; elements.hintText.textContent = state.hintRevealed ? card?.hint || '' : '';
-  elements.typedForm.hidden = state.studyMode !== 'typed' || !card; elements.typedInput.disabled = !card || Boolean(state.typedChecked) || state.animating; elements.typedSubmit.textContent = state.typedChecked ? 'Next card' : 'Check';
+  elements.typedForm.hidden = state.studyMode !== 'typed' || !card; elements.typedInput.disabled = !card || Boolean(state.typedChecked) || state.animating || state.aiPending; elements.typedSubmit.disabled = state.aiPending; elements.typedSubmit.textContent = state.aiPending ? 'Checking…' : state.typedChecked ? 'Next card' : 'Check';
   if (!card) {
     const noDueCards = state.studyFilter === 'due' && activeCards().length && !total;
     elements.cardPosition.textContent = noDueCards ? 'NO CARDS DUE' : activeCards().length ? 'SESSION COMPLETE' : 'ADD CARDS TO BEGIN';
@@ -294,7 +298,7 @@ function renderHomeDashboard() {
   const streak = studyStreaks().current;
   const today = state.activity[localDayKey()]?.reviewed || 0;
   const recentSessions = [...state.sessionHistory].filter(session => session.attempts).slice(-5);
-  const recentAccuracy = recentSessions.length ? Math.round(recentSessions.reduce((total, session) => total + ((session.correct / session.attempts) * 100), 0) / recentSessions.length) : null;
+  const recentAccuracy = recentSessions.length ? Math.round(recentSessions.reduce((total, session) => total + RecallCompletion.summariseSession(session).accuracy, 0) / recentSessions.length) : null;
   const stats = [
     ['Due reviews', due, due ? 'Ready when you are' : 'You are caught up'],
     ['New items', fresh, fresh ? 'Waiting to be learned' : 'No new items'],
@@ -370,7 +374,7 @@ function renderInsights() {
     ? { grid: '#526580', label: '#aeb9cf', accent: '#77d8c9', point: '#87a5ff', surface: '#17223b' }
     : { grid: '#dfe1e8', label: '#69748b', accent: '#71d6c8', point: '#2447c2', surface: '#faf8f3' };
   const sessions = [...state.sessionHistory, ...(state.currentSession?.attempts ? [{ ...state.currentSession, inProgress: true }] : [])];
-  const rates = sessions.map(item => item.attempts ? (item.correct / item.attempts) * 100 : 0);
+  const rates = sessions.map(item => RecallCompletion.summariseSession(item).accuracy);
   const best = rates.length ? Math.round(Math.max(...rates)) : null;
   const change = rates.length > 1 ? Math.round(rates[rates.length - 1] - rates[0]) : null;
   elements.bestAccuracy.textContent = best === null ? '—' : `${best}%`;
@@ -381,7 +385,7 @@ function renderInsights() {
   const width = 560, left = 34, right = 12, top = 13, bottom = 35, graphHeight = 124;
   const step = data.length === 1 ? 0 : (width - left - right) / (data.length - 1);
   const points = data.map((item, index) => {
-    const rate = item.attempts ? item.correct / item.attempts : 0;
+    const rate = RecallCompletion.summariseSession(item).accuracy / 100;
     return { x: left + step * index, y: top + (1 - rate) * graphHeight, rate, ...item };
   });
   const grid = [0, 50, 100].map(value => { const y = top + (1 - value / 100) * graphHeight; return `<path d="M ${left} ${y} H ${width - right}" stroke="${chartColors.grid}" stroke-width="1"/><text x="0" y="${y + 3}" fill="${chartColors.label}" font-size="9" font-family="DM Mono">${value}</text>`; }).join('');
@@ -615,6 +619,7 @@ function openCompletionDialog() {
   if (!summary.reviewed || completionDialog.hidden === false) return;
   const missed = currentSessionMissedCards();
   completionDialog.innerHTML = `<section class="completion-dialog" role="dialog" aria-modal="true" aria-labelledby="completionTitle" aria-describedby="completionSummary"><button class="completion-close" data-completion-action="close" type="button" aria-label="Close session summary">×</button><p class="eyebrow">Session complete</p><h2 id="completionTitle">Nice work.</h2><p id="completionSummary">You finished this study queue.</p><dl class="completion-stats"><div><dt>Reviewed</dt><dd>${summary.reviewed}</dd></div><div><dt>Correct</dt><dd>${summary.correct}</dd></div><div><dt>To revisit</dt><dd>${summary.retry}</dd></div><div><dt>Accuracy</dt><dd>${summary.accuracy}%</dd></div></dl><div class="completion-actions"><button class="primary-button" data-completion-action="restart" type="button">Restart deck</button>${missed.length ? `<button class="text-button completion-action" data-completion-action="practice" type="button">Practice missed cards <span>${missed.length}</span></button><button class="text-button completion-action" data-completion-action="test" type="button">Test missed cards <span>${missed.length}</span></button>` : ''}<button class="dialog-cancel" data-completion-action="close" type="button">Close</button></div></section>`;
+  if (summary.partial) completionDialog.querySelector('.completion-stats div:nth-child(2)').insertAdjacentHTML('afterend', `<div><dt>Partial</dt><dd>${summary.partial}</dd></div>`);
   completionDialog.hidden = false;
   setTimeout(() => completionDialog.querySelector('[data-completion-action="restart"]')?.focus(), 0);
 }
@@ -670,6 +675,8 @@ function review(result) {
   RecallScheduler.scheduleCard(answeredCard, result, reviewedAt);
   const reviewEvent = RecallScheduler.createReviewEvent(answeredCard, result, reviewedAt, responseTimeMs, activeSet()?.id);
   reviewEvent.answerClassification = state.typedChecked?.classification || null;
+  reviewEvent.answerResult = state.typedChecked?.result || (result === 'correct' ? 'correct' : 'incorrect');
+  reviewEvent.answerScore = state.typedChecked?.score ?? (result === 'correct' ? 100 : 0);
   state.reviewLog.push(reviewEvent);
   state.animating = true; elements.card.classList.remove('slide-left', 'slide-right'); void elements.card.offsetWidth; elements.card.classList.add(result === 'correct' ? 'slide-right' : 'slide-left');
   setTimeout(() => {
@@ -679,9 +686,11 @@ function review(result) {
     if (!state.currentSession) startNewSession();
     const missedAdded = result === 'retry' && !state.currentSession.missedCardIds.includes(answeredCard.id);
     if (missedAdded) state.currentSession.missedCardIds.push(answeredCard.id);
-    state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, schedulingBefore, activity, reviewLogId: reviewEvent.id, missedAdded });
+    const partialScore = state.typedChecked?.result === 'partially_correct' ? state.typedChecked.score : 0;
+    state.history.push({ result, repeatIndex, cardId: answeredCard.id, cardBefore: transition.before, schedulingBefore, activity, reviewLogId: reviewEvent.id, missedAdded, partialScore });
     state.currentSession.attempts += 1;
     if (result === 'correct') state.currentSession.correct += 1; else state.currentSession.retry += 1;
+    if (partialScore) { state.currentSession.partial = (state.currentSession.partial || 0) + 1; state.currentSession.partialPoints = (state.currentSession.partialPoints || 0) + partialScore / 100; }
     if (state.typedChecked?.classification === 'typo') state.currentSession.typos = (state.currentSession.typos || 0) + 1;
     if (transition.learned) state.currentSession.learned += 1;
     if (result === 'correct') state.correct++; else state.retry++; state.currentIndex++; const completedQueue = state.currentIndex >= state.queue.length; state.cardPresentedAt = Date.now(); state.flipped = false; state.typedChecked = false; state.hintRevealed = false; elements.typedInput.value = ''; state.animating = false; save(); render(); if (completedQueue) openCompletionDialog();
@@ -694,7 +703,7 @@ function undoReview() {
   state.currentIndex = Math.max(0, state.currentIndex - 1);
   if (last.repeatIndex !== null) { state.queue.splice(last.repeatIndex, 1); state.sessionRepeatedIds.delete(last.cardId); }
   if (last.result === 'correct') state.correct = Math.max(0, state.correct - 1); else state.retry = Math.max(0, state.retry - 1);
-  if (state.currentSession) { state.currentSession.attempts = Math.max(0, state.currentSession.attempts - 1); if (last.result === 'correct') state.currentSession.correct = Math.max(0, state.currentSession.correct - 1); else state.currentSession.retry = Math.max(0, state.currentSession.retry - 1); }
+  if (state.currentSession) { state.currentSession.attempts = Math.max(0, state.currentSession.attempts - 1); if (last.result === 'correct') state.currentSession.correct = Math.max(0, state.currentSession.correct - 1); else state.currentSession.retry = Math.max(0, state.currentSession.retry - 1); if (last.partialScore) { state.currentSession.partial = Math.max(0, (state.currentSession.partial || 0) - 1); state.currentSession.partialPoints = Math.max(0, (state.currentSession.partialPoints || 0) - last.partialScore / 100); } }
   const card = state.sets.flatMap(set => set.cards).find(item => item.id === last.cardId); if (card && last.cardBefore) Object.assign(card, last.cardBefore); if (card && last.schedulingBefore) Object.assign(card, last.schedulingBefore); if (last.reviewLogId) state.reviewLog = state.reviewLog.filter(event => event.id !== last.reviewLogId); if (last.missedAdded && state.currentSession) state.currentSession.missedCardIds = state.currentSession.missedCardIds.filter(id => id !== last.cardId); undoActivity(last.activity); if (last.activity?.learned && state.currentSession) state.currentSession.learned = Math.max(0, state.currentSession.learned - 1);
   state.flipped = false; state.typedChecked = false; state.hintRevealed = false; state.cardPresentedAt = Date.now(); save(); render(); showToast('Last answer undone.');
 }
@@ -916,7 +925,20 @@ $('#saveLabelsBtn').addEventListener('click', () => { const set = activeSet(); i
 $('#importBtn').addEventListener('click', () => { if (elements.importInput.value.length > 2097152) return showToast('Paste at most 2 MiB at once.'); const cards = parseList(elements.importInput.value, elements.importFormat.value); if (cards.length > 2000) return showToast('Import at most 2,000 cards at once.'); if (cards.length) openImportPreview(cards, ['First side', 'Second side']); else elements.importStatus.textContent = 'No pairs found. Choose a separator preset or try “Two lines = one card”.'; });
 elements.card.addEventListener('click', event => { if (event.target.closest('button, input, form')) return; flip(); }); elements.correct.addEventListener('click', () => review('correct')); elements.retry.addEventListener('click', () => review('retry'));
 elements.flag.addEventListener('click', () => { const card = currentCard(); if (!card || state.animating) return; card.flagged = !card.flagged; save(); render(); showToast(card.flagged ? 'Card flagged for later.' : 'Flag removed.'); });
-elements.typedForm.addEventListener('submit', event => { event.preventDefault(); const card = currentCard(); if (!card || state.animating) return; if (state.typedChecked) { review(state.typedChecked.accepted ? 'correct' : 'retry'); return; } const showFront = state.flipped ? state.startSide !== 'front' : state.startSide === 'front'; const expected = showFront ? card.back : card.front; const evaluation = RecallMetadata.evaluateTypedAnswer(elements.typedInput.value, expected, card.acceptedAnswers); state.typedChecked = { accepted: evaluation.accepted, classification: evaluation.classification, expected }; render(); });
+elements.typedForm.addEventListener('submit', async event => {
+  event.preventDefault(); const card = currentCard(); if (!card || state.animating || state.aiPending) return;
+  if (state.typedChecked) { review(state.typedChecked.accepted ? 'correct' : 'retry'); return; }
+  const showFront = state.flipped ? state.startSide !== 'front' : state.startSide === 'front';
+  const expected = showFront ? card.back : card.front;
+  const prompt = showFront ? card.front : card.back;
+  const answer = elements.typedInput.value;
+  const pending = evaluateTypedLocally({ expected, answer, alternatives: card.acceptedAnswers });
+  state.aiPending = pending instanceof Promise; if (state.aiPending) render();
+  try {
+    const evaluation = pending instanceof Promise ? await pending : pending;
+    if (currentCard() === card && !state.typedChecked) state.typedChecked = { ...evaluation, accepted: evaluation.result === 'correct', expected, originalResult: evaluation.result, appealQuestion: prompt, appealAnswer: answer, appealAlternatives: [...(card.acceptedAnswers || [])], appeal: null, appealAttempted: false };
+  } finally { state.aiPending = false; render(); }
+});
 elements.undo.addEventListener('click', undoReview); elements.fullscreen.addEventListener('click', enterFocus); elements.exitFocus.addEventListener('click', exitFocus);
 document.querySelectorAll('.segment').forEach(button => button.addEventListener('click', () => { state.startSide = button.dataset.side; state.flipped = false; document.querySelectorAll('.segment').forEach(item => item.classList.toggle('active', item === button)); render(); }));
 function closeSessionMenu() { elements.sessionMenu.hidden = true; elements.sessionMenuBtn.setAttribute('aria-expanded', 'false'); }
@@ -924,6 +946,7 @@ function closeSettingsMenu() { elements.settingsMenu.hidden = true; elements.set
 elements.settingsBtn.addEventListener('click', event => { event.stopPropagation(); const opening = elements.settingsMenu.hidden; elements.settingsMenu.hidden = !opening; elements.settingsBtn.setAttribute('aria-expanded', String(opening)); });
 elements.settingsMenu.addEventListener('click', event => event.stopPropagation());
 elements.themeSelect.addEventListener('change', () => { state.theme = elements.themeSelect.value; applyTheme(); save(); });
+elements.aiToggle.addEventListener('change', () => { state.aiEnabled = elements.aiToggle.checked; localStorage.setItem('recall-ai-enabled-v1', String(state.aiEnabled)); showToast(state.aiEnabled ? 'AI appeals are available when signed in.' : 'AI appeals turned off.'); });
 const keybindInputs = { flip: elements.keybindFlip, retry: elements.keybindRetry, correct: elements.keybindCorrect, undo: elements.keybindUndo };
 Object.entries(keybindInputs).forEach(([action, input]) => input.addEventListener('keydown', event => { event.preventDefault(); if (event.key === 'Escape') { input.blur(); return; } const key = event.key.toLowerCase(); if (key.length !== 1 && !key.startsWith('arrow')) return; state.keybinds[action] = key; renderKeybinds(); save(); }));
 elements.resetKeybinds.addEventListener('click', () => { state.keybinds = { ...DEFAULT_KEYBINDS }; renderKeybinds(); save(); });
@@ -1166,7 +1189,7 @@ function testSetupConfig() {
 function cardsForTest(config) {
   const deckIds = config.deckIds.length ? config.deckIds : [activeSet()?.id];
   const subset = state.pendingTestCardIds ? new Set(state.pendingTestCardIds) : null;
-  return state.sets.filter(set => deckIds.includes(set.id)).flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, deckTags: set.tags, domain: set.domain, language: set.language, frontLabel: sideNames(set).front, backLabel: sideNames(set).back }))).filter(card => {
+  return state.sets.filter(set => deckIds.includes(set.id)).flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, deckTags: set.tags, subject: set.subject, domain: set.domain, language: set.language, frontLabel: sideNames(set).front, backLabel: sideNames(set).back }))).filter(card => {
     if (subset && !subset.has(card.id)) return false;
     const matchesTags = !config.tags.length || config.tags.every(tag => card.deckTags.some(deckTag => deckTag.toLocaleLowerCase() === tag.toLocaleLowerCase()));
     const matchesFilter = config.filter === 'all' || (config.filter === 'new' && card.state === 'New') || (config.filter === 'learning' && card.state === 'Learning') || (config.filter === 'mastered' && card.state === 'Mastered') || (config.filter === 'missed' && card.missed) || (config.filter === 'flagged' && card.flagged);
@@ -1221,7 +1244,7 @@ function skipTestQuestion() {
   nextTestQuestion();
 }
 function nextTestQuestion() { if (!state.activeTest) return; state.activeTest.currentIndex += 1; state.activeTest.feedback = null; state.activeTest.questionStartedAt = Date.now(); if (state.activeTest.currentIndex >= state.activeTest.questions.length) finishTest(); else renderTestQuestion(); }
-function testAccuracyBreakdown(answers, key) { const groups = {}; answers.filter(answer => answer.result !== 'skipped').forEach(answer => { const values = key === 'tag' ? (answer.tags.length ? answer.tags : ['Untagged']) : [answer.deckName]; values.forEach(value => { const item = groups[value] ||= { total: 0, correct: 0 }; item.total += 1; if (answer.result === 'correct') item.correct += 1; }); }); return Object.entries(groups).map(([name, item]) => `<li><span>${escapeHtml(name)}</span><b>${item.total ? Math.round(item.correct / item.total * 100) : 0}%</b></li>`).join('') || '<li><span>No answered questions</span></li>'; }
+function testAccuracyBreakdown(answers, key) { const groups = {}; answers.filter(answer => answer.result !== 'skipped').forEach(answer => { const values = key === 'tag' ? (answer.tags.length ? answer.tags : ['Untagged']) : [answer.deckName]; values.forEach(value => { const item = groups[value] ||= { total: 0, points: 0 }; item.total += 1; item.points += answer.result === 'correct' ? 100 : answer.result === 'partially_correct' ? Math.max(1, Math.min(79, Number(answer.score) || 0)) : 0; }); }); return Object.entries(groups).map(([name, item]) => `<li><span>${escapeHtml(name)}</span><b>${item.total ? Math.round(item.points / item.total) : 0}%</b></li>`).join('') || '<li><span>No answered questions</span></li>'; }
 function finishTest() {
   const test = state.activeTest; if (!test) return; clearInterval(testTimer); test.endedAt = new Date().toISOString(); test.summary = RecallTest.scoreTest(test); state.testHistory.push({ ...test }); state.activeTest = null; save(); renderTestResults(test);
 }
@@ -1304,7 +1327,7 @@ function renderAttempts() {
   const sessions = [...state.sessionHistory, ...(state.currentSession?.attempts ? [{ ...state.currentSession, inProgress: true }] : [])].filter(session => session.deckId === set?.id).reverse();
   const tests = state.testHistory.filter(test => test.questions.some(question => question.deckId === set?.id)).reverse();
   elements.attemptsSubtitle.textContent = `Separate study sessions and tests for ${set?.name || 'this deck'}`;
-  const studyEntries = sessions.length ? sessions.map(session => { const accuracy = session.attempts ? Math.round((session.correct / session.attempts) * 100) : 0; return `<article class="attempt-entry"><div><strong>${session.inProgress ? 'Current session' : formatSessionTime(session.endedAt || session.startedAt)}</strong><span>${escapeHtml(session.correct)} correct · ${escapeHtml(session.retry)} missed · ${escapeHtml(session.learned || 0)} learned · ${escapeHtml(session.attempts)} answered</span><span>${escapeHtml(session.mode === 'typed' ? 'Typed answers' : 'Flip cards')} · ${escapeHtml(session.filter || 'all')} cards</span></div><b>${accuracy}%</b></article>`; }).join('') : '<p class="attempts-empty">No normal study sessions yet.</p>';
+  const studyEntries = sessions.length ? sessions.map(session => { const summary = RecallCompletion.summariseSession(session); return `<article class="attempt-entry"><div><strong>${session.inProgress ? 'Current session' : formatSessionTime(session.endedAt || session.startedAt)}</strong><span>${escapeHtml(summary.correct)} correct · ${escapeHtml(summary.partial)} partial · ${escapeHtml(summary.retry)} to revisit · ${escapeHtml(session.learned || 0)} learned · ${escapeHtml(summary.reviewed)} answered</span><span>${escapeHtml(session.mode === 'typed' ? 'Typed answers' : 'Flip cards')} · ${escapeHtml(session.filter || 'all')} cards</span></div><b>${summary.accuracy}%</b></article>`; }).join('') : '<p class="attempts-empty">No normal study sessions yet.</p>';
   const testEntries = tests.length ? tests.map(test => { const summary = RecallTest.scoreTest(test); const mode = test.config?.style === 'choice' ? 'Multiple choice' : test.config?.style === 'mixed' ? 'Mixed test' : 'Typed test'; return `<article class="attempt-entry test-attempt-entry"><div><strong>${formatSessionTime(test.endedAt || test.startedAt)}</strong><span>${summary.correct} correct · ${summary.incorrect} incorrect · ${summary.skipped} skipped · ${summary.total} questions</span><span>${mode}</span></div><b>${summary.percentage}%</b></article>`; }).join('') : '<p class="attempts-empty">No completed tests for this deck.</p>';
   elements.attemptsList.innerHTML = `<section class="attempt-group"><h3>Study sessions</h3>${studyEntries}</section><section class="attempt-group"><h3>Test results</h3>${testEntries}</section>`;
 }
@@ -1357,34 +1380,74 @@ elements.typedForm.addEventListener('click', event => {
   const card = currentCard(); const value = elements.typedInput.value.trim();
   if (!card || !value || !state.typedChecked) return;
   card.acceptedAnswers = cleanTags([...(card.acceptedAnswers || []), value]);
-  state.typedChecked = { ...state.typedChecked, accepted: true, classification: 'alternative' };
+  state.typedChecked = { ...state.typedChecked, accepted: true, result: 'correct', score: 100, source: 'local', classification: 'alternative', unavailable: '' };
   save(); render(); showToast('Saved as an accepted alternative.');
 });
 
 const renderWithTypoFeedback = render;
 render = function () {
   renderWithTypoFeedback();
+  const appealArea = $('#typedAppeal');
+  appealArea.replaceChildren();
   if (state.studyMode === 'typed' && state.typedChecked) {
     const result = state.typedChecked;
-    const label = result.accepted ? (result.classification === 'typo' ? 'Correct with a small typo' : 'Correct') : 'Not quite';
-    elements.typedFeedback.innerHTML = `${label} &mdash; expected: ${escapeHtml(result.expected || '')}${!result.accepted ? ' <button type="button" class="text-button" data-accept-alternative>Accept as alternative</button>' : ''}`;
-    elements.typedFeedback.className = `typed-feedback ${result.accepted ? 'accepted' : 'rejected'}`;
+    const localLabel = result.originalResult === 'correct' ? (result.classification === 'typo' ? 'Correct with a small typo' : 'Correct') : result.originalResult === 'partially_correct' ? 'Partially correct' : 'Not quite';
+    elements.typedFeedback.replaceChildren(document.createTextNode(`Local result: ${localLabel} — expected: ${result.expected || ''}`));
+    if (!result.accepted) { const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.dataset.acceptAlternative = ''; button.textContent = 'Accept as alternative'; elements.typedFeedback.append(' ', button); }
+    elements.typedFeedback.className = `typed-feedback ${result.originalResult === 'correct' ? 'accepted' : 'rejected'}`;
+    if (result.originalResult !== 'correct' && (!result.accepted || result.appealAttempted)) {
+      if (!result.appealAttempted) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.dataset.appealAnswer = ''; button.textContent = 'Appeal with AI'; appealArea.append(button);
+      } else {
+        const message = document.createElement('span'); message.className = 'typed-appeal-status';
+        message.textContent = appealStatusText(result.appeal, result.appealPending);
+        appealArea.append(message);
+      }
+    }
   }
 };
 
-submitTestAnswer = function (value) {
+elements.typedForm.addEventListener('click', async event => {
+  if (!event.target.closest('[data-appeal-answer]')) return;
+  const card = currentCard(); const checked = state.typedChecked;
+  if (!card || !checked || checked.accepted || checked.originalResult === 'correct' || checked.appealAttempted || state.aiPending) return;
+  if (!state.aiEnabled) return showToast('Enable AI appeals in Settings first.');
+  const deck = state.testStudyContext ? studySetForCard(card) : activeSet();
+  const appealKey = JSON.stringify([card.id, checked.appealQuestion, checked.expected, checked.appealAnswer.trim()]);
+  if (state.appealedAnswers.has(appealKey)) { checked.appealAttempted = true; checked.appeal = { status: 'unavailable', reason: 'This answer was already appealed — original local result kept' }; render(); return; }
+  state.appealedAnswers.add(appealKey);
+  checked.appealAttempted = true; checked.appealPending = true; state.aiPending = true; render();
+  const appeal = await appealTypedAnswer({ question: checked.appealQuestion, expected: checked.expected, answer: checked.appealAnswer, alternatives: checked.appealAlternatives, deck, card, local: { result: checked.originalResult } });
+  if (currentCard() === card && state.typedChecked === checked) {
+    checked.appeal = appeal; checked.appealPending = false;
+    if (appeal.status === 'accepted' || appeal.status === 'partially_accepted') {
+      checked.result = appeal.ai.result; checked.score = appeal.ai.score; checked.accepted = appeal.status === 'accepted'; checked.classification = appeal.status === 'accepted' ? 'ai_appeal' : 'ai_partial_appeal';
+    }
+  }
+  state.aiPending = false; render();
+});
+
+submitTestAnswer = async function (value) {
   const test = state.activeTest; const question = activeTestQuestion();
-  if (!test || !question || test.feedback) return;
+  if (!test || !question || test.feedback || test.aiPending) return;
   const correctAnswer = testAnswerValue(question);
-  const evaluation = question.answerType === 'typed'
-    ? RecallMetadata.evaluateTypedAnswer(value, correctAnswer, question.acceptedAnswers || [])
-    : { accepted: RecallTest.answersMatch(value, correctAnswer), classification: RecallTest.answersMatch(value, correctAnswer) ? 'exact' : 'incorrect' };
-  const result = evaluation.accepted ? 'correct' : 'incorrect';
-  const answer = { questionId: question.id, deckId: question.deckId, deckName: question.deckName, tags: question.deckTags || [], prompt: testPromptValue(question), correctAnswer, userAnswer: value || '-', answerType: question.answerType, result, classification: evaluation.classification, timeMs: Math.max(0, Date.now() - test.questionStartedAt) };
+  const pending = question.answerType === 'typed'
+    ? evaluateTypedLocally({ expected: correctAnswer, answer: value, alternatives: question.acceptedAnswers || [] })
+    : { result: RecallTest.answersMatch(value, correctAnswer) ? 'correct' : 'incorrect', score: RecallTest.answersMatch(value, correctAnswer) ? 100 : 0, classification: 'choice', source: 'local' };
+  test.aiPending = pending instanceof Promise;
+  if (test.aiPending) {
+    const submit = testMode.querySelector('#testTypedForm button[type="submit"]');
+    if (submit) { submit.disabled = true; submit.textContent = 'Checking…'; }
+    const input = testMode.querySelector('#testTypedInput'); if (input) input.disabled = true;
+  }
+  const evaluation = pending instanceof Promise ? await pending : pending;
+  if (state.activeTest !== test || activeTestQuestion() !== question || test.feedback) return;
+  test.aiPending = false;
+  const answer = { questionId: question.id, deckId: question.deckId, deckName: question.deckName, tags: question.deckTags || [], prompt: testPromptValue(question), correctAnswer, userAnswer: value || '-', answerType: question.answerType, result: evaluation.result, originalResult: evaluation.result, score: evaluation.score, feedback: evaluation.feedback || '', source: evaluation.source, classification: evaluation.classification, appealAttempted: false, appeal: null, timeMs: Math.max(0, Date.now() - test.questionStartedAt) };
   test.answers.push(answer); test.feedback = answer; save(); renderTestQuestion();
 };
 skipTestQuestion = function () {
-  const test = state.activeTest; const question = activeTestQuestion(); if (!test || !question || test.feedback) return;
+  const test = state.activeTest; const question = activeTestQuestion(); if (!test || !question || test.feedback || test.aiPending) return;
   test.answers.push({ questionId: question.id, deckId: question.deckId, deckName: question.deckName, tags: question.deckTags || [], prompt: testPromptValue(question), correctAnswer: testAnswerValue(question), userAnswer: 'Skipped', answerType: question.answerType, result: 'skipped', timeMs: Math.max(0, Date.now() - test.questionStartedAt) });
   nextTestQuestion();
 };
@@ -1466,3 +1529,83 @@ closeTestMode = function () {
 };
 
 deckSubjectButton.addEventListener('click', event => { event.stopImmediatePropagation(); renderDeckMetadataDialog(); }, true);
+
+function evaluateTypedLocally({ expected, answer, alternatives }) {
+  const local = RecallMetadata.evaluateTypedAnswer(answer, expected, alternatives);
+  return RecallAI.localResult(local);
+}
+
+function appealTypedAnswer({ question, expected, answer, alternatives, deck, card, local }) {
+  const language = card?.wordInfo?.language?.name || deck?.language?.name || '';
+  const guidance = deck?.domain === 'science'
+    ? 'Award partial credit for present scientific concepts; reject contradictions.'
+    : deck?.domain === 'language'
+      ? 'Judge meaning in the selected language; distinguish a minor spelling error from a wrong translation.'
+      : 'Judge meaning rather than exact wording; reject contradictions.';
+  let client = null;
+  try { if (window.RecallCloudClient?.enabled) client = window.RecallCloudClient.create(); } catch { /* Keep local grading available when cloud setup fails. */ }
+  return RecallAI.appeal({ local, question, expected, answer, alternatives: alternatives || [], subject: deck?.subject || '', language, guidance, client });
+}
+
+function appealStatusText(appeal, pending) {
+  if (pending) return 'Checking appeal…';
+  if (!appeal || appeal.status === 'unavailable') return appeal?.reason || 'AI unavailable — original local result kept';
+  const label = appeal.status === 'accepted' ? 'Appeal accepted' : appeal.status === 'partially_accepted' ? 'Appeal partially accepted' : 'Appeal rejected';
+  const missing = appeal.ai.missing_points.length ? ` Missing points: ${appeal.ai.missing_points.join('; ')}.` : '';
+  return `${label} — ${appeal.ai.score}%: ${appeal.ai.feedback}${missing} Confidence: ${Math.round(appeal.ai.confidence * 100)}%.`;
+}
+
+const renderTestQuestionBeforeAI = renderTestQuestion;
+renderTestQuestion = function () {
+  renderTestQuestionBeforeAI();
+  const answerInput = testMode.querySelector('#testTypedInput');
+  if (answerInput) answerInput.maxLength = RecallAI.MAX_ANSWER_LENGTH;
+  const feedback = state.activeTest?.feedback;
+  const panel = testMode.querySelector('.test-feedback');
+  if (!feedback || !panel) return;
+  const title = panel.querySelector('strong');
+  if (title) title.textContent = feedback.result === 'partially_correct' ? `Partially correct (${feedback.score}%)` : feedback.result === 'correct' ? 'Correct' : 'Not quite';
+  const detail = document.createElement('span');
+  detail.textContent = `Local result: ${feedback.originalResult === 'correct' ? 'Correct' : feedback.originalResult === 'partially_correct' ? 'Partially correct' : 'Not quite'}.`;
+  panel.prepend(detail);
+  if (feedback.answerType === 'typed' && feedback.originalResult !== 'correct') {
+    const appealArea = document.createElement('div'); appealArea.className = 'test-appeal'; appealArea.setAttribute('aria-live', 'polite');
+    if (!feedback.appealAttempted) { const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.dataset.testAppeal = ''; button.textContent = 'Appeal with AI'; appealArea.append(button); }
+    else { const message = document.createElement('span'); message.textContent = appealStatusText(feedback.appeal, state.activeTest?.appealPending); appealArea.append(message); }
+    panel.append(appealArea);
+    const next = testMode.querySelector('[data-test-action="next"]'); if (next) next.disabled = Boolean(state.activeTest?.appealPending);
+  }
+};
+
+testMode.addEventListener('click', async event => {
+  if (!event.target.closest('[data-test-appeal]')) return;
+  const test = state.activeTest; const question = activeTestQuestion(); const feedback = test?.feedback;
+  if (!test || !question || !feedback || feedback.answerType !== 'typed' || feedback.originalResult === 'correct' || feedback.appealAttempted || test.appealPending) return;
+  if (!state.aiEnabled) return showToast('Enable AI appeals in Settings first.');
+  feedback.appealAttempted = true; test.appealPending = true; renderTestQuestion();
+  const appeal = await appealTypedAnswer({ question: feedback.prompt, expected: feedback.correctAnswer, answer: feedback.userAnswer, alternatives: question.acceptedAnswers || [], deck: question, card: question, local: { result: feedback.originalResult } });
+  if (state.activeTest === test && activeTestQuestion() === question && test.feedback === feedback) {
+    feedback.appeal = appeal;
+    if (appeal.status === 'accepted' || appeal.status === 'partially_accepted') { feedback.result = appeal.ai.result; feedback.score = appeal.ai.score; feedback.feedback = appeal.ai.feedback; feedback.source = 'ai_appeal'; feedback.classification = appeal.status === 'accepted' ? 'ai_appeal' : 'ai_partial_appeal'; }
+    save();
+  }
+  test.appealPending = false; if (state.activeTest === test) renderTestQuestion();
+});
+
+const nextTestQuestionBeforeAppeal = nextTestQuestion;
+nextTestQuestion = function () { if (state.activeTest?.appealPending) return; return nextTestQuestionBeforeAppeal(); };
+
+const testResultStatusBeforeAI = testResultStatus;
+testResultStatus = item => item.result === 'partially_correct' ? 'Partially correct' : testResultStatusBeforeAI(item);
+
+const renderTestResultsBeforeAI = renderTestResults;
+renderTestResults = function (test) {
+  renderTestResultsBeforeAI(test);
+  const summary = RecallTest.scoreTest(test);
+  const counts = testMode.querySelector('.test-results .test-head div p:last-of-type');
+  if (counts) counts.textContent = `${summary.correct} correct · ${summary.partial} partial · ${summary.incorrect} incorrect · ${summary.skipped} skipped · ${summary.unanswered} unanswered`;
+  const points = testMode.querySelector('.test-results .test-score-grid div:last-child b');
+  if (points) points.textContent = `${summary.points}/${summary.total * 100} pts`;
+  const filter = testMode.querySelector('[data-test-review-filter="incorrect"]');
+  if (filter) { const button = filter.cloneNode(true); button.dataset.testReviewFilter = 'partially_correct'; button.textContent = 'Partial'; button.classList.toggle('active', state.testReviewFilter === 'partially_correct'); filter.after(button); }
+};

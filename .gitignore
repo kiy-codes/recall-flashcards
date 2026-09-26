@@ -15,6 +15,7 @@ archive/internal-development-builds/*
 .env
 .env.*
 !.env.example
+supabase/functions/.env*
 
 # Generated public client and static web output
 cloud-client.js

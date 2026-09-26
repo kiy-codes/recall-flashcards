@@ -34,7 +34,7 @@
         <button class="text-button" id="accountBtn" type="button" aria-haspopup="dialog">Account &amp; sync</button>
         <button class="text-button" id="attemptsTrigger" type="button">Attempts</button>
         <button class="text-button" id="clearProgressBtn" type="button">Reset progress</button>
-        <div class="settings-control"><button class="settings-button" id="settingsBtn" type="button" aria-label="Settings" title="Settings" aria-expanded="false"><span aria-hidden="true">&#9881;</span></button><div class="settings-menu" id="settingsMenu" hidden><p class="control-label">Appearance</p><label class="settings-select">Theme<select id="themeSelect"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="control-label">Keyboard shortcuts</p><p class="settings-help">Click a field, then press a key. Arrow keys always work too.</p><label class="keybind-field">Flip card<input id="keybindFlip" readonly /></label><label class="keybind-field">Needs practice<input id="keybindRetry" readonly /></label><label class="keybind-field">Mark correct<input id="keybindCorrect" readonly /></label><label class="keybind-field">Undo<input id="keybindUndo" readonly /></label><button class="settings-reset" id="resetKeybindsBtn" type="button">Reset shortcuts</button></div></div>
+        <div class="settings-control"><button class="settings-button" id="settingsBtn" type="button" aria-label="Settings" title="Settings" aria-expanded="false"><span aria-hidden="true">&#9881;</span></button><div class="settings-menu" id="settingsMenu" hidden><p class="control-label">Appearance</p><label class="settings-select">Theme<select id="themeSelect"><option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="control-label">Answer evaluation</p><label class="settings-select ai-setting"><input id="aiEvaluationToggle" type="checkbox" /> Enable optional AI appeals</label><p class="settings-help">Off by default. Typed answers are always checked locally first. After a non-correct result, you can choose one AI appeal if signed in. Only the question, answers, alternatives, subject, language and marking guidance are sent.</p><p class="control-label">Keyboard shortcuts</p><p class="settings-help">Click a field, then press a key. Arrow keys always work too.</p><label class="keybind-field">Flip card<input id="keybindFlip" readonly /></label><label class="keybind-field">Needs practice<input id="keybindRetry" readonly /></label><label class="keybind-field">Mark correct<input id="keybindCorrect" readonly /></label><label class="keybind-field">Undo<input id="keybindUndo" readonly /></label><button class="settings-reset" id="resetKeybindsBtn" type="button">Reset shortcuts</button></div></div>
       </header>
 
       <aside class="library-drawer" id="libraryDrawer" aria-label="Flashcard library" aria-hidden="true">
@@ -147,8 +147,9 @@
           <div class="study-hint" id="studyHint" hidden><button id="revealHintBtn" type="button">Show hint</button><p id="hintText"></p></div>
           <form class="typed-answer" id="typedAnswerForm" hidden>
             <label id="typedPrompt">Type the answer</label>
-            <div><input id="typedAnswerInput" type="text" autocomplete="off" placeholder="Type your answer" /><button class="primary-button" id="typedSubmitBtn" type="submit">Check</button></div>
+            <div><input id="typedAnswerInput" type="text" autocomplete="off" maxlength="700" placeholder="Type your answer" /><button class="primary-button" id="typedSubmitBtn" type="submit">Check</button></div>
             <p class="typed-feedback" id="typedFeedback" aria-live="polite"></p>
+            <div class="typed-appeal" id="typedAppeal" aria-live="polite"></div>
           </form>
           <div class="review-actions">
             <button class="review-button retry" id="retryBtn" type="button" disabled>
@@ -254,6 +255,7 @@
     <script src="scheduler.js"></script>
     <script src="completion-utils.js"></script>
     <script src="metadata-utils.js"></script>
+    <script src="ai-evaluator.js"></script>
     <script src="sync-core.js"></script>
     <script src="share-core.js"></script>
     <script src="app.js"></script>

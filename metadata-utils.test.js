@@ -52,6 +52,7 @@ test('gender-test eligibility excludes non-language and unknown-gender cards', (
 
 test('typed-answer evaluation separates exact answers, safe typos, and incorrect answers', () => {
   assert.equal(metadata.evaluateTypedAnswer('  Hello!! ', 'hello').classification, 'exact');
+  assert.equal(metadata.evaluateTypedAnswer('greetings', 'hello', ['greetings']).classification, 'alternative');
   assert.equal(metadata.evaluateTypedAnswer('hellp', 'hello').classification, 'typo');
   assert.equal(metadata.evaluateTypedAnswer('hallo', 'hello').classification, 'incorrect');
   assert.equal(metadata.evaluateTypedAnswer('cafe', 'café').classification, 'incorrect');

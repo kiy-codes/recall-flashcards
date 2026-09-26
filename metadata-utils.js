@@ -120,9 +120,10 @@
   }
 
   function evaluateTypedAnswer(actual, expected, alternatives = []) {
-    const given = normaliseAnswer(actual); const answers = [expected, ...alternatives].map(normaliseAnswer).filter(Boolean);
+    const given = normaliseAnswer(actual); const expectedAnswer = normaliseAnswer(expected); const acceptedAlternatives = alternatives.map(normaliseAnswer).filter(Boolean); const answers = [expectedAnswer, ...acceptedAlternatives].filter(Boolean);
     if (!given || !answers.length) return { classification: 'incorrect', accepted: false, expected: String(expected || '') };
-    if (answers.includes(given)) return { classification: 'exact', accepted: true, expected: String(expected || '') };
+    if (given === expectedAnswer) return { classification: 'exact', accepted: true, expected: String(expected || '') };
+    if (acceptedAlternatives.includes(given)) return { classification: 'alternative', accepted: true, expected: String(expected || '') };
     // A one-character vowel substitution is often a different valid word
     // (for example hallo/hello), so keep that case for manual acceptance.
     const likelyTypo = answer => {
