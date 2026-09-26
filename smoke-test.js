@@ -400,14 +400,14 @@ app.whenReady().then(async () => {
           auth: { getSession: async () => ({ data: { session: { access_token: 'test-session' } } }) },
           functions: { invoke: async (name, options) => { aiCalls++; assert(name === 'evaluate-answer' && Object.keys(options.body).length === 7, 'Appeal did not use the allowlisted Edge Function request'); return { data: aiReplies.shift(), error: null }; } },
         }) };
-        state.aiEnabled = true;
+        state.aiEnabled = false; aiToggle.checked = false; localStorage.setItem('recall-ai-enabled-v1', 'false');
         state.activeSetId = state.sets[0].id; state.studyMode = 'typed'; state.startSide = 'front'; state.shuffled = false;
         resetStudyRun([one], 'all');
         document.querySelector('#typedAnswerInput').value = 'different meaning';
         document.querySelector('#typedAnswerForm').requestSubmit();
         assert(state.typedChecked.originalResult === 'incorrect' && aiCalls === 0 && document.querySelector('#typedAppeal [data-appeal-answer]'), 'Local result did not precede optional appeal');
         click('#typedAppeal [data-appeal-answer]');
-        assert(document.querySelector('#typedAppeal').textContent.includes('Checking appeal'), 'Checking appeal state was not shown');
+        assert(state.aiEnabled && aiToggle.checked && localStorage.getItem('recall-ai-enabled-v1') === 'true' && document.querySelector('#typedAppeal').textContent.includes('Checking appeal'), 'First appeal click did not enable AI and show progress');
         await wait(20);
         assert(state.typedChecked.result === 'correct' && state.typedChecked.originalResult === 'incorrect' && document.querySelector('#typedAppeal').textContent.includes('Appeal accepted') && aiCalls === 1, 'Accepted appeal did not preserve local result and grant correct credit: ' + JSON.stringify({ checked: state.typedChecked, calls: aiCalls, text: document.querySelector('#typedAppeal').textContent }));
         assert(!document.querySelector('#typedAppeal [data-appeal-answer]'), 'An answer could be appealed twice');
@@ -428,9 +428,19 @@ app.whenReady().then(async () => {
         click('[data-home-nav="test"]'); document.querySelector('#testQuestionCount').value = '1'; document.querySelector('#testAnswerStyle').value = 'typed'; click('[data-test-action="start"]');
         document.querySelector('#testTypedInput').value = 'unrelated answer'; document.querySelector('#testTypedForm').requestSubmit();
         assert(state.activeTest.feedback.originalResult === 'incorrect' && aiCalls === 2 && document.querySelector('[data-test-appeal]'), 'Test Mode called AI before appeal');
+        state.aiEnabled = false; aiToggle.checked = false; localStorage.setItem('recall-ai-enabled-v1', 'false');
         click('[data-test-appeal]'); await wait(20);
-        assert(state.activeTest.feedback.result === 'incorrect' && document.querySelector('.test-appeal').textContent.includes('Appeal rejected') && aiCalls === 3, 'Rejected test appeal changed the local grade');
-        window.RecallCloudClient = previousCloud; state.aiEnabled = previousAI;
+        assert(state.aiEnabled && aiToggle.checked && state.activeTest.feedback.result === 'incorrect' && document.querySelector('.test-appeal').textContent.includes('Appeal rejected') && aiCalls === 3, 'Test Mode appeal did not start from the button or changed the local grade');
+        window.RecallCloudClient = previousCloud; state.aiEnabled = previousAI; aiToggle.checked = previousAI; localStorage.setItem('recall-ai-enabled-v1', String(previousAI));
+        closeTestMode(); setAppView('deck'); resetStudyRun([one], 'all');
+        document.querySelector('#typedAnswerInput').value = 'offline answer'; document.querySelector('#typedAnswerForm').requestSubmit();
+        click('#typedAppeal [data-appeal-answer]'); await wait(20);
+        assert(state.typedChecked.originalResult === 'incorrect' && document.querySelector('#typedAppeal').textContent.includes('Cloud connection is not configured') && aiCalls === 3, 'Offline appeal did not explain why the local result was kept');
+        window.RecallCloudClient = { enabled: true, create: () => ({ auth: { getSession: async () => ({ data: { session: null } }) }, functions: { invoke: async () => { throw new Error('Signed-out appeal reached the server'); } } }) };
+        resetStudyRun([one], 'all'); document.querySelector('#typedAnswerInput').value = 'signed out answer'; document.querySelector('#typedAnswerForm').requestSubmit();
+        click('#typedAppeal [data-appeal-answer]'); await wait(20);
+        assert(state.typedChecked.originalResult === 'incorrect' && document.querySelector('#typedAppeal').textContent.includes('Sign in to appeal'), 'Signed-out appeal did not show an inline sign-in message');
+        window.RecallCloudClient = previousCloud; state.aiEnabled = previousAI; aiToggle.checked = previousAI; localStorage.setItem('recall-ai-enabled-v1', String(previousAI));
 
         return 'All automated feature checks passed.';
       })();

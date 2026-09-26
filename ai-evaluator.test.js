@@ -77,6 +77,8 @@ test('malformed, timed-out, unauthenticated and unavailable appeals keep local r
     { ...client(), functions: { invoke: async () => ({ data: null, error: { context: { status: 503 } } }) } },
   ];
   for (const cloud of clients) { const appeal = await AI.appeal({ ...base, local, client: cloud }); assert.equal(appeal.status, 'unavailable'); assert.equal(appeal.ai, null); assert.equal(local.result, 'incorrect'); }
-  const offline = await AI.appeal({ ...base, local }); assert.equal(offline.status, 'unavailable');
-  const privateAlternative = await AI.appeal({ ...base, local, alternatives: ['person@example.com'], client: client() }); assert.equal(privateAlternative.status, 'unavailable');
+  const offline = await AI.appeal({ ...base, local }); assert.equal(offline.status, 'unavailable'); assert.match(offline.reason, /Cloud connection is not configured/);
+  const privateAlternative = await AI.appeal({ ...base, local, alternatives: ['person@example.com'], client: client() }); assert.equal(privateAlternative.status, 'unavailable'); assert.match(privateAlternative.reason, /private-looking/);
+  const notDeployed = await AI.appeal({ ...base, local, client: { ...client(), functions: { invoke: async () => ({ data: null, error: { context: { status: 404 } } }) } } });
+  assert.match(notDeployed.reason, /not deployed/); assert.equal(local.result, 'incorrect');
 });

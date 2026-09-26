@@ -72,18 +72,19 @@
 
   async function appeal({ local, client = null, ...fields }) {
     if (!local || !['incorrect', 'partially_correct'].includes(local.result)) throw new Error('Only an unresolved local result can be appealed.');
+    const unavailable = detail => ({ status: 'unavailable', reason: `AI unavailable — original local result kept. ${detail}`, ai: null });
     let input;
     try { input = validateInput(appealInput(fields)); }
-    catch { return { status: 'unavailable', reason: 'AI unavailable — original local result kept', ai: null }; }
-    if (!client) return { status: 'unavailable', reason: 'AI unavailable — original local result kept', ai: null };
+    catch { return unavailable('This answer contains private-looking or overlong text.'); }
+    if (!client) return unavailable('Cloud connection is not configured.');
     try {
       const { data: sessionData, error: sessionError } = await client.auth.getSession();
-      if (sessionError || !sessionData?.session?.access_token) return { status: 'unavailable', reason: 'AI unavailable — original local result kept. Sign in to appeal.', ai: null };
+      if (sessionError || !sessionData?.session?.access_token) return unavailable('Sign in to appeal.');
       const { data, error } = await client.functions.invoke('evaluate-answer', { body: input, signal: AbortSignal.timeout(8000) });
-      if (error) return { status: 'unavailable', reason: error.context?.status === 429 ? 'AI unavailable — original local result kept. Appeal limit reached.' : 'AI unavailable — original local result kept', ai: null };
+      if (error) return unavailable(error.context?.status === 429 ? 'Appeal limit reached.' : error.context?.status === 404 ? 'The AI evaluator function is not deployed.' : error.context?.status === 401 ? 'Session expired; sign in again.' : 'Check your connection or server function.');
       const ai = validateResult(data);
       return { status: ai.result === 'correct' ? 'accepted' : ai.result === 'partially_correct' ? 'partially_accepted' : 'rejected', reason: '', ai };
-    } catch { return { status: 'unavailable', reason: 'AI unavailable — original local result kept', ai: null }; }
+    } catch { return unavailable('The request timed out or returned an invalid response.'); }
   }
 
   return { MAX_ANSWER_LENGTH, validateInput, validateResult, shouldAskAI, localResult, evaluate, appeal };

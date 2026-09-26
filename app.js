@@ -947,6 +947,12 @@ elements.settingsBtn.addEventListener('click', event => { event.stopPropagation(
 elements.settingsMenu.addEventListener('click', event => event.stopPropagation());
 elements.themeSelect.addEventListener('change', () => { state.theme = elements.themeSelect.value; applyTheme(); save(); });
 elements.aiToggle.addEventListener('change', () => { state.aiEnabled = elements.aiToggle.checked; localStorage.setItem('recall-ai-enabled-v1', String(state.aiEnabled)); showToast(state.aiEnabled ? 'AI appeals are available when signed in.' : 'AI appeals turned off.'); });
+function enableAIFromAppealClick() {
+  if (state.aiEnabled) return;
+  state.aiEnabled = true;
+  elements.aiToggle.checked = true;
+  localStorage.setItem('recall-ai-enabled-v1', 'true');
+}
 const keybindInputs = { flip: elements.keybindFlip, retry: elements.keybindRetry, correct: elements.keybindCorrect, undo: elements.keybindUndo };
 Object.entries(keybindInputs).forEach(([action, input]) => input.addEventListener('keydown', event => { event.preventDefault(); if (event.key === 'Escape') { input.blur(); return; } const key = event.key.toLowerCase(); if (key.length !== 1 && !key.startsWith('arrow')) return; state.keybinds[action] = key; renderKeybinds(); save(); }));
 elements.resetKeybinds.addEventListener('click', () => { state.keybinds = { ...DEFAULT_KEYBINDS }; renderKeybinds(); save(); });
@@ -1411,7 +1417,7 @@ elements.typedForm.addEventListener('click', async event => {
   if (!event.target.closest('[data-appeal-answer]')) return;
   const card = currentCard(); const checked = state.typedChecked;
   if (!card || !checked || checked.accepted || checked.originalResult === 'correct' || checked.appealAttempted || state.aiPending) return;
-  if (!state.aiEnabled) return showToast('Enable AI appeals in Settings first.');
+  enableAIFromAppealClick();
   const deck = state.testStudyContext ? studySetForCard(card) : activeSet();
   const appealKey = JSON.stringify([card.id, checked.appealQuestion, checked.expected, checked.appealAnswer.trim()]);
   if (state.appealedAnswers.has(appealKey)) { checked.appealAttempted = true; checked.appeal = { status: 'unavailable', reason: 'This answer was already appealed — original local result kept' }; render(); return; }
@@ -1581,7 +1587,7 @@ testMode.addEventListener('click', async event => {
   if (!event.target.closest('[data-test-appeal]')) return;
   const test = state.activeTest; const question = activeTestQuestion(); const feedback = test?.feedback;
   if (!test || !question || !feedback || feedback.answerType !== 'typed' || feedback.originalResult === 'correct' || feedback.appealAttempted || test.appealPending) return;
-  if (!state.aiEnabled) return showToast('Enable AI appeals in Settings first.');
+  enableAIFromAppealClick();
   feedback.appealAttempted = true; test.appealPending = true; renderTestQuestion();
   const appeal = await appealTypedAnswer({ question: feedback.prompt, expected: feedback.correctAnswer, answer: feedback.userAnswer, alternatives: question.acceptedAnswers || [], deck: question, card: question, local: { result: feedback.originalResult } });
   if (state.activeTest === test && activeTestQuestion() === question && test.feedback === feedback) {
