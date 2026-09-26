@@ -1,0 +1,43 @@
+name: Build macOS release artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build unsigned DMG and ZIP
+        run: npm run dist:mac -- --${{ matrix.arch }}
+      - name: Try optional unsigned PKG
+        continue-on-error: true
+        run: npm run dist:mac:pkg -- --${{ matrix.arch }}
+      - name: Upload only installer/archive files
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            release-*/macos/**/*.dmg
+            release-*/macos/**/*.zip
+            release-*/macos/**/*.pkg
+          if-no-files-found: error
+          retention-days: 7

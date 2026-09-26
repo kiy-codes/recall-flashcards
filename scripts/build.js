@@ -5,7 +5,7 @@ const { createHash } = require('node:crypto');
 const esbuild = require('esbuild');
 const { validateConfig } = require('../sync-core');
 const root = path.resolve(__dirname, '..');
-const WEB_FILES = ['index.html', 'styles.css', 'app.js', 'test-utils.js', 'subject-utils.js', 'scheduler.js', 'completion-utils.js', 'metadata-utils.js', 'sync-core.js', 'sync-service.js', 'account-ui.js', 'cloud-client.js', 'web-offline.js', 'exampleText.txt'];
+const WEB_FILES = ['index.html', 'styles.css', 'app.js', 'test-utils.js', 'subject-utils.js', 'scheduler.js', 'completion-utils.js', 'metadata-utils.js', 'sync-core.js', 'sync-service.js', 'share-core.js', 'share-service.js', 'account-ui.js', 'share-ui.js', 'cloud-client.js', 'web-offline.js', 'exampleText.txt'];
 
 function readConfig(env = process.env) {
   let local = {};
@@ -19,11 +19,11 @@ function readConfig(env = process.env) {
   if (values.SUPABASE_ANON_KEY) validateConfig(values.SUPABASE_URL, values.SUPABASE_ANON_KEY);
   return validateConfig(values.SUPABASE_URL, values.SUPABASE_PUBLISHABLE_KEY || values.SUPABASE_ANON_KEY);
 }
-async function build({ web = false, config = readConfig() } = {}) {
+async function build({ web = false, config = readConfig(), outfile = path.join(root, 'cloud-client.js') } = {}) {
   config = validateConfig(config.url, config.key);
   await esbuild.build({
     absWorkingDir: root,
-    entryPoints: ['cloud-client-entry.js'], outfile: 'cloud-client.js',
+    entryPoints: ['cloud-client-entry.js'], outfile,
     bundle: true, platform: 'browser', format: 'iife', target: ['chrome120', 'firefox120', 'safari17'],
     minify: true, legalComments: 'inline',
     define: { __RECALL_SUPABASE_URL__: JSON.stringify(config.url), __RECALL_SUPABASE_KEY__: JSON.stringify(config.key) },

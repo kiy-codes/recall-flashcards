@@ -1,10 +1,11 @@
 {
   "name": "recall-flashcards",
-  "version": "1.1.0",
-  "description": "A focused, keyboard-first flashcard app for Windows",
+  "version": "1.2.0",
+  "description": "A focused, keyboard-first flashcard app for desktop and web",
   "main": "main.js",
   "author": "Recall",
   "license": "MIT",
+  "homepage": "https://github.com/kiy-codes/recall-flashcards",
   "scripts": {
     "build:client": "node scripts/build.js",
     "build:web": "node scripts/build.js --web",
@@ -13,16 +14,28 @@
     "start": "electron .",
     "predev": "npm run build:client",
     "dev": "electron .",
-    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js metadata-utils.test.js sync.test.js sync-sql.test.js",
+    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js metadata-utils.test.js sync.test.js sync-sql.test.js share.test.js share-sql.test.js release-build.test.js security.test.js",
     "test:smoke": "node scripts/run-smoke.js",
-    "predist": "npm run build:client",
-    "dist": "electron-builder --win nsis",
-    "predist:portable": "npm run build:client",
-    "dist:portable": "electron-builder --win portable"
+    "dist": "node scripts/dist-local.js win nsis",
+    "dist:portable": "node scripts/dist-local.js win portable",
+    "dist:win": "node scripts/dist-local.js win",
+    "dist:win:portable": "node scripts/dist-local.js win portable",
+    "dist:win:zip": "node scripts/dist-local.js win zip",
+    "dist:win:msi": "node scripts/dist-local.js win msi",
+    "dist:win:appx": "node scripts/dist-local.js win appx",
+    "dist:linux": "node scripts/dist-local.js linux",
+    "dist:mac": "node scripts/dist-local.js mac",
+    "dist:mac:pkg": "node scripts/dist-local.js mac pkg",
+    "dist:all-local": "node scripts/dist-local.js current",
+    "dist:release-folder": "node scripts/dist-local.js current",
+    "dist:check": "node scripts/dist-local.js check"
   },
   "build": {
     "appId": "com.recall.flashcards",
     "productName": "Recall Flashcards",
+    "publish": null,
+    "forceCodeSigning": false,
+    "artifactName": "Recall-Flashcards-${version}-${os}-${arch}-${ext}.${ext}",
     "files": [
       "index.html",
       "styles.css",
@@ -34,39 +47,90 @@
       "metadata-utils.js",
       "sync-core.js",
       "sync-service.js",
+      "share-core.js",
+      "share-service.js",
       "account-ui.js",
+      "share-ui.js",
       "cloud-client.js",
       "web-offline.js",
       "main.js",
       "preload.js",
       "package.json",
-      "exampleText.txt"
+      "exampleText.txt",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/node_modules{,/**}"
     ],
     "directories": {
-      "output": "release"
+      "output": "release-${version}"
     },
     "win": {
+      "icon": "node_modules/app-builder-lib/templates/icons/electron-linux/256x256.png",
       "target": [
         "nsis"
       ],
-      "artifactName": "Recall-Flashcards-Setup-${version}.${ext}"
+      "signExecutable": false
     },
     "nsis": {
+      "artifactName": "Recall-Flashcards-${version}-win-${arch}-setup.exe",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Recall Flashcards"
+    },
+    "portable": {
+      "artifactName": "Recall-Flashcards-${version}-win-${arch}-portable.exe"
+    },
+    "msi": {
+      "oneClick": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Recall Flashcards"
+    },
+    "appx": {
+      "artifactName": "Recall-Flashcards-${version}-win-${arch}-unsigned.appx",
+      "identityName": "Recall.Flashcards.Local",
+      "applicationId": "RecallFlashcards",
+      "publisher": "CN=Recall",
+      "publisherDisplayName": "Recall"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "tar.gz"
+      ],
+      "category": "Education",
+      "maintainer": "Recall <257371033+kiy-codes@users.noreply.github.com>"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.education",
+      "identity": null,
+      "notarize": false
+    },
+    "dmg": {
+      "sign": false
+    },
+    "pkg": {
+      "artifactName": "Recall-Flashcards-${version}-mac-${arch}-installer.pkg"
     }
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
-    "electron": "^36.4.0",
+    "electron": "^44.4.5",
     "electron-builder": "^26.0.12",
     "esbuild": "0.28.2"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.1"
   },
-  "engines": { "node": ">=22.12.0" }
+  "engines": {
+    "node": ">=22.12.0"
+  }
 }

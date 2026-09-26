@@ -23,8 +23,12 @@ app.whenReady().then(async () => {
         assert(document.querySelector('#home') && document.querySelector('#homeStats'), 'Home dashboard did not render on launch');
         assert(document.querySelector('#homeRecentDecks').textContent.includes('No cards yet'), 'Home dashboard did not show its empty state');
         assert([...document.querySelectorAll('[data-revision-workspace]')].every(section => section.hidden), 'Home left revision screens visible below the dashboard');
-        click('[data-home-nav="add"]');
-        assert(state.currentView === 'cards' && document.querySelector('#home').hidden && !document.querySelector('#create').hidden, 'Add cards did not open the selected deck directly');
+        assert(!document.querySelector('[data-home-nav="add"]'), 'Add cards is still a standalone navigation item');
+        click('[data-home-nav="library"]');
+        click('#fullLibraryGrid [data-set]');
+        assert(state.currentView === 'deck' && !document.querySelector('#openAddCardsBtn').disabled, 'Library did not open Deck cards with an available Add cards button');
+        click('#openAddCardsBtn');
+        assert(state.currentView === 'cards' && document.querySelector('#home').hidden && !document.querySelector('#create').hidden, 'Deck cards Add cards button did not open the creator');
         click('.brand');
         assert(state.currentView === 'home' && !document.querySelector('#home').hidden, 'Logo did not return to the dashboard');
         click('[data-home-nav="library"]');
@@ -60,10 +64,13 @@ app.whenReady().then(async () => {
         document.querySelector('#backInput').value = '1';
         document.querySelector('#addCardForm').requestSubmit();
         assert(state.sets[0].cards.length === 1, 'Manual card creation failed');
+        assert(state.currentView === 'deck' && document.querySelector('#create').hidden, 'Saving a card did not return to Deck cards');
         assert(document.querySelectorAll('#homeStats .home-stat').length === 6, 'Home dashboard did not show all summary cards');
         assert(document.querySelector('[data-home-deck]'), 'Home dashboard did not show a recent deck');
         click('[data-home-deck]');
         assert(state.activeSetId === state.sets[0].id && state.queue.length === 1, 'Starting study from Home did not use the selected deck queue');
+
+        click('[data-home-nav="library"]'); click('#fullLibraryGrid [data-set]'); click('#openAddCardsBtn');
 
         document.querySelector('#importInput').value = 'Two - 2\\nThree - 3';
         document.querySelector('#importFormat').value = 'hyphen';
@@ -345,6 +352,34 @@ app.whenReady().then(async () => {
         assert(!state.sets.some(set => set.id === chemistry.id), 'Deck deletion failed');
         deleteFolder(languages.id);
         assert(!state.folders.some(item => item.id === languages.id), 'Folder deletion failed');
+
+        click('[data-home-nav="library"]');
+        click('#sharedWithMeBtn');
+        assert(document.querySelector('#deckShareDialog').open && document.querySelector('#shareSavedLinks'), 'Shared with me did not open');
+        click('#deckShareDialog [data-share-action="close"]');
+        click('#fullLibraryGrid [data-share-set="' + biology.id + '"]');
+        assert(document.querySelector('#deckShareDialog').open && document.querySelector('#shareOwnerName').textContent === 'Life Science', 'Deck share action did not target the chosen deck');
+        click('#deckShareDialog [data-share-action="close"]');
+        const sharedCopy = window.RecallLibrary.addSharedDeck(window.RecallShareCore.snapshotDeck(state.sets[0]));
+        assert(sharedCopy.id !== state.sets[0].id && state.currentView === 'deck', 'Copy to my library did not create a separate deck');
+        assert(sharedCopy.cards.every(card => card.state === 'New' && card.reviewCount === 0 && !card.notes && !card.hint), 'Shared copy retained private fields or review progress');
+
+        const hostileId = 'id"><img src=x onerror=alert(1)>';
+        sharedCopy.cards.push(normaliseCard({ id: hostileId, front: '<img src=x onerror=alert(1)>', back: 'safe', notes: '<script>alert(1)</script>' }));
+        renderDeck();
+        assert(!document.querySelector('#deckList img, #deckList script, #deckList [onerror]'), 'Card rendering interpreted untrusted HTML');
+        assert([...document.querySelectorAll('#deckList [data-edit]')].some(button => button.dataset.edit === hostileId), 'Escaped card ID lost its value');
+        sharedCopy.cards.pop();
+        const hostileFolder = { id: hostileId, name: '<img src=x>', color: 'red; background:url(https://evil.example)', order: 999 };
+        state.folders.push(hostileFolder); renderLibrary(); renderFullLibrary();
+        assert(!document.querySelector('#libraryTree img, #fullLibraryGrid img, #libraryTree [onerror]'), 'Library rendering interpreted untrusted HTML');
+        assert(document.querySelector('#libraryTree [data-folder-color]') && !document.querySelector('#libraryTree [style*="evil.example"]'), 'Unsafe folder colour reached CSS');
+        state.folders.pop();
+        assert(typeof openSharePreview === 'function', 'Share-file validation is unavailable');
+        let rejectedShare = false;
+        try { openSharePreview({ format: 'recall-share-v2', sets: [{ name: 'Bad', cards: Array(2001).fill({ front: 'a', back: 'b' }) }] }); } catch { rejectedShare = true; }
+        assert(rejectedShare, 'Oversized share file was accepted');
+        assert(csvEscape('=HYPERLINK("https://evil.example")', ',').replace(/^"/, '').startsWith("'"), 'CSV export did not neutralise spreadsheet formulas');
 
         return 'All automated feature checks passed.';
       })();

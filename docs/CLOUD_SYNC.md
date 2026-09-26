@@ -1,6 +1,6 @@
 # Optional accounts and cloud backup
 
-Recall's Windows/Electron app and static website can use Supabase for email/password accounts and manual library snapshots. The existing `recall-library-v2` localStorage entry remains the working library. Study, editing, imports and exports work without signing in. No library is uploaded at sign-in or while typing. The separate Expo app is not connected by this change; its different data format must be reconciled before it can use this snapshot table.
+Recall's Windows/Electron app and static website can use Supabase for email/password accounts and manual library snapshots. The existing `recall-library-v2` localStorage entry remains the working library, but Supabase auth tokens are kept in sessionStorage and cleared when the browser session ends. Upgrading clears Recall's older persistent auth key and requires signing in again. Study, editing, imports and exports work without signing in. No library is uploaded at sign-in or while typing. The separate Expo app is not connected by this change; its different data format must be reconciled before it can use this snapshot table.
 
 ## Free-plan assumptions and cost boundary
 
@@ -25,12 +25,22 @@ For email/password sign-ups using other addresses with no mail delivery service,
 ## Dashboard setup
 
 1. In Supabase, choose or create an organization on **Free**, then create a project within the available free-project limit. Verify the organization’s Billing page before continuing. Use its standard `https://PROJECT_REF.supabase.co` endpoint. Keep all paid add-ons off.
-2. Open the SQL Editor and run [supabase/schema.sql](../supabase/schema.sql) in full. This creates `public.recall_libraries` with `user_id`, `library` JSONB, `updated_at`, and `revision`.
-3. Verify Row Level Security is enabled. There are separate SELECT, INSERT, UPDATE and DELETE policies for `authenticated`, all comparing `auth.uid()` with `user_id`; UPDATE also checks the resulting owner. Anonymous clients have no table privileges. The primary key permits one row per account.
+2. Open the SQL Editor and run [supabase/schema.sql](../supabase/schema.sql) in full. This creates `public.recall_libraries` for cloud backup and `public.recall_deck_shares` plus a preview function for private deck links. If you configured Recall before sharing was added, rerun the full idempotent SQL file.
+3. Verify Row Level Security is enabled on both tables. Library policies compare `auth.uid()` with `user_id`; share-link policies compare it with `owner_id`. Anonymous clients have no table privileges. The only anonymous preview path is a security-definer function that requires a 256-bit bearer token and returns only the safe deck snapshot.
 4. In Authentication, enable email/password. Choose the confirmation behavior described above. Leave phone/SMS, social login, anonymous sign-in and external providers unused.
 5. Copy the project URL and **publishable key** from Connect or Settings → API Keys. A legacy **anon** key also works. Supabase identifies [publishable keys as suitable for distributed clients](https://supabase.com/docs/guides/getting-started/api-keys). Never copy a secret or `service_role` key. Builds reject elevated or unrecognized keys without printing them.
 6. Configure the local build as below, open Account & sync, and sign up/sign in. No library moves automatically. Choose Upload local library and review the confirmation to create the first cloud row.
 7. On another browser/computer using the same project configuration, sign in with the same account. Choose Download cloud library, compare the copies, and choose Use cloud. Existing local data gets a recovery copy before replacement.
+
+## Private deck sharing
+
+After running the updated SQL and configuring a public Supabase URL/key, sign in to create links. Open **Library → deck → Deck cards → Share deck**, or use the share action beside any deck in Library. Choose 7 or 30 days, create a link, then copy the displayed code. On the static website it is a URL-fragment link (`#share=...`); in Electron it is a code because a `file://` address cannot be shared across computers. Keep the code when it is created: only its SHA-256 hash is stored on the server, so the plaintext cannot be recovered later. Existing links can be revoked from the same deck’s sharing dialog.
+
+Anyone with the link or code and the same configured Supabase project can preview the deck without signing in. They can choose **Copy to my library** to make a new, independent, editable local deck. The copy has fresh IDs and starts with new, immediately due cards. It does not edit the owner’s deck or automatically upload to anyone’s cloud backup. **Library → Shared with me** keeps successfully previewed links in this browser session’s sessionStorage; Forget removes a session shortcut, while revoked, expired and deleted links cannot be previewed. A link is an immutable snapshot: owner edits require a new link. Revocation blocks future previews/copies, but cannot remove copies someone has already made. Deleting a local deck does not automatically revoke its independently stored link; revoke its links before deletion if needed.
+
+The server stores and returns only deck name/subject/domain/language/tags, side labels, card sides, accepted alternatives and basic word metadata. It excludes owner account details, card IDs, notes, hints, flags, review counts, due dates, schedules, activity and history. The SQL table has owner-only RLS and a strict snapshot-shape constraint; the token-preview function returns no owner fields. No service-role key, Edge Function, certificate, paid service, or public deck listing is used. Newly exported `.recall` share files use the same safe snapshot. Older `.recall` files may already contain more data; review them before manually distributing them. Full backups and CSV/TSV exports are separate, explicit actions and can contain private information.
+
+Cloud sharing needs a connection to create, preview or revoke links. Cards already copied into localStorage remain available offline. A share link must be kept private: anyone who has it can preview the snapshot until it expires or is revoked. The website removes an incoming token from its address bar after opening the preview. This project does not deploy the SQL or configure a hosted Supabase project automatically; local automated tests exercise the policies in an embedded PostgreSQL engine. Test your configured project with two real accounts before treating it as production-ready.
 
 ## Environment and builds
 

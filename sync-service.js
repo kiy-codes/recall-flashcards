@@ -53,7 +53,7 @@
     }
     function readLocal() {
       try { return Core.validateLibrary(local.read()); }
-      catch (error) { throw new SyncError('local_storage', error.message); }
+      catch { throw new SyncError('local_storage', 'The local library could not be read safely. Export a backup and check browser storage.'); }
     }
     async function task(label, run) {
       if (busy) throw new SyncError('busy', 'Wait for the current account or sync request to finish.');
@@ -163,8 +163,8 @@
         if (localChanged) {
           try { local.replace(Core.clone(target), plan.local); }
           catch (error) {
-            if (writeCloud) throw new SyncError('partial_sync', 'Cloud saved the reviewed snapshot, but this device could not replace its local library: ' + error.message);
-            throw new SyncError('local_storage', error.message);
+            if (writeCloud) throw new SyncError('partial_sync', 'Cloud saved the reviewed snapshot, but this device could not replace its local library. Export a backup and retry.');
+            throw new SyncError('local_storage', 'This device could not replace its local library. Export a backup and check browser storage.');
           }
         }
         if (!writeCloud) record(plan, row);

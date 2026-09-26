@@ -28,7 +28,7 @@ test('serialization preserves the existing library shape, metadata and schedules
 });
 
 test('invalid, oversized and dangerous libraries are rejected before replacement', () => {
-  for (const change of [v => { v.sets = []; }, v => { v.folders = []; }, v => { v.sets[0].cards.push(v.sets[0].cards[0]); }, v => { v.sets[0].cards[0].back = 4; }, v => { v.activity = { day: null }; }, v => { v.sets[0].tags = 'bad'; }, v => { v.testHistory = [{ answers: [] }]; }, v => { v.sets[0].cards[0].front = 'x'.repeat(Core.MAX_BYTES); }]) {
+  for (const change of [v => { v.sets = []; }, v => { v.folders = []; }, v => { v.sets[0].cards.push(v.sets[0].cards[0]); }, v => { v.sets[0].cards[0].back = 4; }, v => { v.activity = { day: null }; }, v => { v.sets[0].tags = 'bad'; }, v => { v.testHistory = [{ answers: [] }]; }, v => { v.sets[0].cards[0].front = 'x'.repeat(Core.MAX_BYTES); }, v => { v.folders[0].color = 'red; background:url(https://evil.example)'; }, v => { v.sets[0].cards[0].notes = '<script>'.repeat(500); }, v => { v.sets[0].cards[0].acceptedAnswers = [42]; }, v => { v.sets[0].id = 'x'.repeat(129); }]) {
     const value = F.library(); change(value); assert.throws(() => Core.validateLibrary(value), /Invalid library/);
   }
   const unsafe = F.library(); unsafe.sets[0].word = JSON.parse('{"__proto__":{"polluted":true}}');
@@ -154,7 +154,7 @@ test('local edits after preview and during download are never overwritten', asyn
   await assert.rejects(h.service.resolve(plan, 'cloud'), { code: 'local_changed' });
   plan = await h.service.prepare('download');
   h.client.beforeQuery = async () => { h.data.sets[0].name = 'Edit during request'; };
-  await assert.rejects(h.service.resolve(plan, 'cloud'), /Local changed/);
+  await assert.rejects(h.service.resolve(plan, 'cloud'), /could not replace its local library/);
   assert.equal(h.data.sets[0].name, 'Edit during request'); assert.equal(h.replacements, 0);
 });
 
@@ -191,7 +191,7 @@ test('offline, malformed response and full storage failures preserve the local l
   const cloud = F.library(); cloud.sets[0].name = 'Cloud'; h.client.seed('user-1', cloud);
   const plan = await h.service.prepare('download');
   h.storage.setItem = () => { throw new Error('Storage is full'); };
-  await assert.rejects(h.service.resolve(plan, 'cloud'), /Storage is full/);
+  await assert.rejects(h.service.resolve(plan, 'cloud'), /could not replace its local library/);
   assert.deepEqual(h.data, original);
 });
 

@@ -38,3 +38,10 @@ mobile/android/local.properties
 # Android signing keys
 *.jks
 *.keystore
+*.pem
+*.p12
+*.pfx
+*.key
+google-services.json
+GoogleService-Info.plist
+.npmrc

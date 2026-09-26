@@ -38,7 +38,7 @@
     inspect(value);
     const ids = (rows, label, seen = new Set()) => {
       for (const row of rows) {
-        if (!plain(row) || typeof row.id !== 'string' || !row.id || seen.has(row.id)) bad(label + ' must have unique IDs.');
+        if (!plain(row) || typeof row.id !== 'string' || !row.id || row.id.length > 128 || seen.has(row.id)) bad(label + ' must have unique IDs of at most 128 characters.');
         seen.add(row.id);
       }
       return seen;
@@ -46,14 +46,20 @@
     const setIds = ids(value.sets, 'Decks');
     const folderIds = ids(value.folders, 'Folders');
     const cardIds = new Set();
-    for (const folder of value.folders) if (typeof folder.name !== 'string') bad('folder name is missing.');
+    for (const folder of value.folders) {
+      if (typeof folder.name !== 'string' || !folder.name.trim() || folder.name.length > 70) bad('folder name must be 1–70 characters.');
+      if (folder.color !== undefined && !/^#[0-9a-f]{6}$/i.test(folder.color)) bad('folder colour must be a hex colour.');
+    }
     for (const deck of value.sets) {
-      if (typeof deck.name !== 'string' || !Array.isArray(deck.cards)) bad('deck name or cards are missing.');
+      if (typeof deck.name !== 'string' || !deck.name.trim() || deck.name.length > 70 || !Array.isArray(deck.cards)) bad('deck name must be 1–70 characters and cards must be a list.');
       if (deck.folderId && !folderIds.has(deck.folderId)) bad('a deck references a missing folder.');
-      if (deck.tags !== undefined && (!Array.isArray(deck.tags) || deck.tags.some(tag => typeof tag !== 'string'))) bad('deck tags must be text.');
+      if (deck.tags !== undefined && (!Array.isArray(deck.tags) || deck.tags.length > 100 || deck.tags.some(tag => typeof tag !== 'string' || tag.length > 100))) bad('deck tags must be short text.');
       ids(deck.cards, 'Cards', cardIds);
       for (const card of deck.cards) {
-        if (typeof card.front !== 'string' || typeof card.back !== 'string') bad('card sides must be text.');
+        if (typeof card.front !== 'string' || typeof card.back !== 'string' || !card.front.trim() || !card.back.trim() || card.front.length > 700 || card.back.length > 700) bad('card sides must be 1–700 characters of text.');
+        if (card.notes !== undefined && (typeof card.notes !== 'string' || card.notes.length > 2000)) bad('card notes must be short text.');
+        if (card.hint !== undefined && (typeof card.hint !== 'string' || card.hint.length > 700)) bad('card hint must be short text.');
+        if (card.acceptedAnswers !== undefined && (!Array.isArray(card.acceptedAnswers) || card.acceptedAnswers.length > 30 || card.acceptedAnswers.some(answer => typeof answer !== 'string' || answer.length > 100))) bad('card alternatives must be short text.');
         if (card.wordInfo !== undefined && card.wordInfo !== null && !plain(card.wordInfo)) bad('invalid word details.');
       }
     }

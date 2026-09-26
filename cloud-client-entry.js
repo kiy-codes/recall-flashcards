@@ -4,18 +4,23 @@ import Core from './sync-core.js';
 // These two public values are substituted by scripts/build.js. Nothing else in
 // process.env is embedded in the browser or Electron renderer.
 const config = Core.validateConfig(__RECALL_SUPABASE_URL__, __RECALL_SUPABASE_KEY__);
+let sharedClient;
+const storageKey = config.enabled ? 'recall-account-' + new URL(config.url).hostname : '';
+// Older builds persisted refresh tokens beyond the browser session. Remove only
+// this app's old key; existing users will need to sign in once more.
+if (storageKey) window.localStorage.removeItem(storageKey);
 window.RecallCloudClient = {
   enabled: config.enabled,
   namespace: config.url,
   create() {
     if (!config.enabled) return null;
-    return createClient(config.url, config.key, {
+    sharedClient ||= createClient(config.url, config.key, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
-        storage: window.localStorage,
-        storageKey: 'recall-account-' + new URL(config.url).hostname,
+        storage: window.sessionStorage,
+        storageKey,
       },
       global: {
         async fetch(input, options = {}) {
@@ -29,5 +34,6 @@ window.RecallCloudClient = {
         },
       },
     });
+    return sharedClient;
   },
 };

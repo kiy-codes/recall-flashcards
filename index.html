@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none'" />
     <meta name="theme-color" content="#101b3b" />
     <title>Recall — Flashcards</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -22,7 +23,6 @@
           <button class="top-nav-button active" data-home-nav="home" type="button">Home</button>
           <button class="top-nav-button" data-home-nav="study" type="button">Study</button>
           <button class="top-nav-button" data-home-nav="library" type="button">Library</button>
-          <button class="top-nav-button" data-home-nav="add" type="button">Add cards</button>
           <button class="top-nav-button" data-home-nav="test" type="button">Test</button>
         </nav>
         <div class="deck-summary" aria-live="polite">
@@ -162,13 +162,13 @@
         </div>
       </section>
 
-      <section class="workspace" id="create" data-revision-workspace data-app-view="cards">
+      <section class="workspace card-create-dialog" id="create" data-revision-workspace data-app-view="cards" role="region" aria-label="Add cards" hidden>
         <div class="workspace-heading">
           <div>
             <p class="eyebrow">Build your deck</p>
             <h2>Add cards your way.</h2>
           </div>
-          <p>Add one card at a time, or bring in a whole vocabulary list.</p>
+          <button class="text-button" id="closeAddCardsBtn" type="button">Back to deck cards</button>
         </div>
         <div class="creator-grid">
           <form class="panel add-panel" id="addCardForm">
@@ -214,7 +214,7 @@
       <section class="deck-section" id="deck" data-revision-workspace data-app-view="deck">
         <div class="deck-heading">
           <div><p class="eyebrow">Your collection</p><h2>Deck cards</h2></div>
-          <div class="deck-heading-actions"><button class="text-button" id="exportDeckBtn" type="button">Export CSV</button><button class="text-button" id="exportTsvBtn" type="button">Export TSV</button><details class="share-picker"><summary>Share decks <span id="shareDeckSummary">Choose decks</span></summary><div class="share-picker-options" id="shareDeckOptions"></div></details><button class="text-button" id="shareDecksBtn" type="button">Export share file</button><button class="danger-button" id="clearDeckBtn" type="button" disabled>Clear deck</button></div>
+          <div class="deck-heading-actions"><button class="primary-button" id="openAddCardsBtn" type="button">+ Add cards</button><button class="text-button" id="openDeckShareBtn" type="button">Share deck</button><button class="text-button" id="exportDeckBtn" type="button">Export CSV</button><button class="text-button" id="exportTsvBtn" type="button">Export TSV</button><details class="share-picker"><summary>Share decks <span id="shareDeckSummary">Choose decks</span></summary><div class="share-picker-options" id="shareDeckOptions"></div></details><button class="text-button" id="shareDecksBtn" type="button">Export share file</button><button class="danger-button" id="clearDeckBtn" type="button" disabled>Clear deck</button></div>
         </div>
         <div class="card-management">
           <div class="card-management-main"><label class="deck-search"><span>⌕</span><input id="deckSearch" type="search" placeholder="Search cards, notes, hints, or tags" autocomplete="off" /></label><button class="text-button" id="clearSearchBtn" type="button">Clear search</button><details class="tag-picker"><summary>Tags <span id="tagFilterSummary">All tags</span></summary><div class="tag-picker-options" id="tagFilterOptions"></div></details><button class="text-button" id="manageTagsBtn" type="button">Manage tags</button></div>
@@ -242,7 +242,7 @@
     </main>
     <section class="full-library" id="fullLibrary" hidden aria-label="Full library">
       <header class="full-library-head"><div><p class="eyebrow">Your collection</p><h1>All study sets.</h1></div><button class="drawer-close" id="fullLibraryClose" type="button">×</button></header>
-      <div class="full-library-tools"><label class="library-search"><span>⌕</span><input id="fullLibrarySearch" type="search" placeholder="Filter sets and folders" autocomplete="off" /></label><label class="library-sort">Sort<select id="fullLibrarySort"><option value="manual">Manual order</option><option value="subject">Subject</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="cards-desc">Most cards</option><option value="cards-asc">Fewest cards</option></select></label><button class="drawer-action" id="fullNewSetBtn" type="button">+ New set</button><button class="drawer-action" id="fullNewFolderBtn" type="button">+ Folder</button></div>
+      <div class="full-library-tools"><label class="library-search"><span>⌕</span><input id="fullLibrarySearch" type="search" placeholder="Filter sets and folders" autocomplete="off" /></label><label class="library-sort">Sort<select id="fullLibrarySort"><option value="manual">Manual order</option><option value="subject">Subject</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="cards-desc">Most cards</option><option value="cards-asc">Fewest cards</option></select></label><button class="drawer-action" id="fullNewSetBtn" type="button">+ New set</button><button class="drawer-action" id="fullNewFolderBtn" type="button">+ Folder</button><button class="drawer-action" id="sharedWithMeBtn" type="button">Shared with me</button></div>
       <div class="full-library-grid" id="fullLibraryGrid"></div>
     </section>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -255,10 +255,13 @@
     <script src="completion-utils.js"></script>
     <script src="metadata-utils.js"></script>
     <script src="sync-core.js"></script>
+    <script src="share-core.js"></script>
     <script src="app.js"></script>
     <script src="cloud-client.js"></script>
     <script src="sync-service.js"></script>
+    <script src="share-service.js"></script>
     <script src="account-ui.js"></script>
+    <script src="share-ui.js"></script>
     <script src="web-offline.js"></script>
   </body>
 </html>

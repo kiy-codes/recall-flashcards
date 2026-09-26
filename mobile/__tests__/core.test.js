@@ -22,9 +22,17 @@ describe('filters, duplicates and imports', () => {
 
 describe('library sharing and progress', () => {
   test('shares decks without session history and imports a copy with folder', () => {
-    const library = blankLibrary(); library.sets[0].name = 'Words'; library.sets[0].cards.push(normaliseCard({ front: 'A', back: 'B' })); library.folders.push({ id: 'folder', name: 'Languages', color: '#2447c2', order: 0 }); library.sets[0].folderId = 'folder'; library.sessions.push({ id: 'private', attempts: 2, correct: 2 });
-    const payload = sharePayload(library, [library.sets[0].id]); expect(payload.sessions).toBeUndefined(); expect(payload.sets[0].cards).toHaveLength(1);
+    const library = blankLibrary(); library.sets[0].name = 'Words'; library.sets[0].cards.push(normaliseCard({ front: 'A', back: 'B', notes: 'private note', hint: 'private hint', state: 'Mastered', reviewCount: 9 })); library.folders.push({ id: 'folder', name: 'Languages', color: '#2447c2', order: 0 }); library.sets[0].folderId = 'folder'; library.sessions.push({ id: 'private', attempts: 2, correct: 2 });
+    const payload = sharePayload(library, [library.sets[0].id]); expect(payload.sessions).toBeUndefined(); expect(payload.sets[0].cards).toHaveLength(1); expect(JSON.stringify(payload)).not.toMatch(/private note|private hint|reviewCount|Mastered|sessions/);
     const imported = importShare(blankLibrary(), payload, 'copy', 'skip').library; expect(imported.sets.some(set => set.name === 'Words')).toBe(true); expect(imported.folders.some(folder => folder.name === 'Languages')).toBe(true);
+    expect(imported.sets.find(set => set.name === 'Words').cards[0]).toMatchObject({ notes: '', hint: '', state: 'New', reviewCount: 0 });
+  });
+  test('ignores malformed and private fields in imported shares', () => {
+    const original = blankLibrary();
+    expect(importShare(original, { format: 'recall-mobile-share-v1', sets: 'bad', folders: [] }).imported).toBe(0);
+    const shared = { format: 'recall-mobile-share-v1', folders: [], sets: [{ name: 'Safe', cards: [{ front: 'A', back: 'B', notes: 'do not copy', state: 'Mastered', reviewCount: 99 }] }] };
+    const result = importShare(original, shared, 'copy');
+    expect(result.library.sets.find(set => set.name === 'Safe').cards[0]).toMatchObject({ notes: '', state: 'New', reviewCount: 0 });
   });
   test('migrates older cards, computes stats and streaks', () => { const migrated = migrateLibrary({ sets: [{ name: 'Old', cards: [{ front: 'A', back: 'B' }] }] }); expect(migrated.sets[0].cards[0].state).toBe('New'); expect(sessionStats([{ attempts: 2, correct: 1 }, { attempts: 2, correct: 2 }])).toMatchObject({ best: 100, change: 50 }); expect(streaks({ '2026-09-19': { reviewed: 1 }, '2026-09-20': { reviewed: 1 } }, new Date('2026-09-20')).current).toBe(2); });
 });

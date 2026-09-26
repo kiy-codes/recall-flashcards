@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 - Deck sharing, local packages, and security hardening (2026-09-26)
+
+- Added private, expiring Supabase deck links with read-only previews, independent local copies, revocation, and owner-scoped RLS; moved Add cards inside Deck cards.
+- Added isolated local builds for Windows setup/portable/ZIP/MSI, Linux AppImage/DEB/RPM/tar, and macOS DMG/ZIP, with unsigned AppX/PKG as explicit manual options.
+- Hardened Electron navigation, sandbox and permission settings; added web security headers, safer import/export handling, session-scoped auth/share tokens, and dependency updates.
+- Added a manual macOS GitHub Actions build path for both Intel and Apple Silicon; release uploads remain a separate, deliberate step.
+
 ## 1.1.0 - Optional accounts and cloud backup (2026-09-23)
 
 - Added optional Supabase email/password accounts, session restoration, manual upload/download, sync status and per-account last-sync time.

@@ -472,6 +472,24 @@ html[data-theme="dark"] .import-flow,html[data-theme="dark"] .import-card-table,
 html[data-theme="dark"] .home-stat,html[data-theme="dark"] .home-panel { color: var(--text-strong); background: var(--surface); border-color: var(--line); }html[data-theme="dark"] .home-deck-open,html[data-theme="dark"] .home-empty strong { color: var(--text-strong); }html[data-theme="dark"] .top-nav-button.active { color: #fff; background: var(--surface-raised); }
 body.focus-study .home-dashboard { display: none; }
 .app-shell.dashboard-only .hero,.app-shell.dashboard-only .study-area,.app-shell.dashboard-only .workspace,.app-shell.dashboard-only .deck-section,.app-shell.dashboard-only .insights-section,.app-shell.dashboard-only .heatmap-section { display: none; }
+.card-create-dialog:not([hidden]) { position: fixed; z-index: 18; inset: 0; overflow-y: auto; width: 100%; max-width: none; padding: 35px max(24px, calc((100vw - 1100px)/2)) 70px; border: 0; background: var(--paper); }
+.card-create-dialog[hidden] { display: none !important; }
+.card-create-dialog .workspace-heading { align-items: center; }
+.card-create-dialog .workspace-heading .text-button { margin: 0; }
+.deck-heading-actions .primary-button { min-height: 36px; }
+@media (max-width: 760px) { .card-create-dialog:not([hidden]) { padding: 25px 18px 60px; } .card-create-dialog .workspace-heading { align-items: start; flex-direction: column; } }
+.full-library-tools { grid-template-columns: minmax(220px, 1fr) 130px auto auto auto; }
+.deck-share-dialog { width: min(720px, calc(100vw - 32px)); }
+.deck-share-dialog section { margin-top: 18px; }
+.deck-share-dialog label { display: grid; gap: 5px; margin: 10px 0; color: var(--muted); font-size: 11px; font-weight: 700; }
+.deck-share-dialog input { width: 100%; min-height: 39px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fffefa; }
+.deck-share-dialog select { min-width: 120px; min-height: 39px; margin: 0; }
+.deck-share-dialog .account-choice { border-top: 1px solid var(--line); }
+.share-link-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.share-link-row span { overflow-wrap: anywhere; }
+.share-preview-cards { max-height: 280px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+.share-preview-cards > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 9px; border-bottom: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .full-library-tools { grid-template-columns: 1fr 1fr; } .full-library-tools #sharedWithMeBtn { grid-column: 1 / -1; } .share-preview-cards > div { grid-template-columns: 1fr; gap: 3px; } }
 .home-dashboard[hidden],[data-revision-workspace][hidden] { display: none !important; }
 .app-shell.dashboard-only .deck-summary,.app-shell.dashboard-only #attemptsTrigger,.app-shell.dashboard-only #clearProgressBtn,.app-shell.dashboard-only .library-trigger,.app-shell.dashboard-only #testModeBtn { display: none; }
 @media (max-width: 1100px) { .topbar { gap: 9px; }.top-nav { gap: 0; }.top-nav-button { padding-inline: 5px; font-size: 9px; }.home-stats { grid-template-columns: repeat(3, 1fr); } }
