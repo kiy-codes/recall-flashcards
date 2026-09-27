@@ -9,7 +9,7 @@ const platforms = {
   linux: { host: 'linux', folder: 'linux', targets: ['AppImage', 'deb', 'rpm', 'tar.gz'], manual: [] },
   mac: { host: 'darwin', folder: 'macos', targets: ['dmg', 'zip'], manual: ['pkg'] },
 };
-const APP_FILES = [...WEB_FILES.filter(file => file !== 'cloud-client.js'), 'main.js', 'preload.js'];
+const APP_FILES = [...WEB_FILES.filter(file => !['cloud-client.js', 'catalog-data.js', 'fsrs-vendor.js'].includes(file)), 'main.js', 'preload.js'];
 
 function parseArgs(args, host = process.platform, hostArch = process.arch) {
   const [command = 'current', ...rest] = args;
@@ -109,7 +109,7 @@ function verifyPackagedApp(context) {
   const asar = require('@electron/asar');
   const resources = context.packager.getResourcesDir(context.appOutDir);
   const archive = path.join(resources, 'app.asar');
-  const expected = [...APP_FILES, 'cloud-client.js', 'package.json'].sort();
+  const expected = [...APP_FILES, 'catalog-data.js', 'cloud-client.js', 'fsrs-vendor.js', 'package.json'].sort();
   const actual = asar.listPackage(archive).map(file => file.replace(/^[\\/]+/, '')).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error('Packaged app contains missing or unexpected files; refusing to create installers.');

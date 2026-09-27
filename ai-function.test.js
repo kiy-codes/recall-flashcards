@@ -4,11 +4,12 @@ const clientValidation = require('./ai-evaluator');
 const UUID = '11111111-2222-4333-8444-555555555555';
 const input = { question: 'Define diffusion', expected_answer: 'Net movement from high to low concentration', user_answer: 'Particles move down a concentration gradient', accepted_alternatives: ['Particles spread from higher to lower concentration'], subject: 'Biology', language: 'English', marking_guidance: 'Award key concepts.' };
 const result = { result: 'correct', score: 90, feedback: 'Equivalent meaning.', missing_points: [], confidence: 0.9 };
-const env = name => ({ SUPABASE_URL: 'https://example.supabase.co', GROQ_API_KEY: 'test-server-key' })[name];
+const env = name => ({ SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key', GROQ_API_KEY: 'test-server-key' })[name];
 const request = (payload = input, headers = {}) => new Request('https://example.supabase.co/functions/v1/evaluate-answer', { method: 'POST', headers: { 'content-type': 'application/json', apikey: 'sb_publishable_public', authorization: 'Bearer user.jwt.token', ...headers }, body: JSON.stringify(payload) });
 const fetcher = (calls, groqStatus = 200, groqBody = result) => async (url, options) => {
   calls.push({ url, options });
   if (url.includes('/auth/v1/user')) return Response.json({ id: UUID });
+  if (url.includes('/rest/v1/recall_ai_settings')) return Response.json([{ provider: 'groq', model: 'openai/gpt-oss-120b' }]);
   return Response.json({ choices: [{ message: { content: JSON.stringify(groqBody) } }] }, { status: groqStatus });
 };
 
@@ -25,12 +26,12 @@ test('Edge Function verifies user and sends only allowlisted learning text to Gr
   const { handleRequest } = await import('./supabase/functions/evaluate-answer/index.ts');
   const calls = []; const reply = await handleRequest(request(), { fetcher: fetcher(calls), env, rateState: new Map() });
   assert.equal(reply.status, 200); assert.deepEqual(await reply.json(), result);
-  assert.equal(calls.length, 2); assert.match(calls[0].url, /\/auth\/v1\/user$/);
-  const groq = JSON.parse(calls[1].options.body);
+  assert.equal(calls.length, 3); assert.match(calls[0].url, /\/auth\/v1\/user$/);
+  const groq = JSON.parse(calls[2].options.body);
   assert.equal(groq.model, 'openai/gpt-oss-120b');
   assert.equal(groq.response_format.json_schema.strict, true);
   assert.deepEqual(JSON.parse(groq.messages[1].content), input);
-  assert.doesNotMatch(calls[1].options.body, /test-server-key|email|password|private_notes|review_history/);
+  assert.doesNotMatch(calls[2].options.body, /test-server-key|email|password|private_notes|review_history/);
 });
 
 test('Edge Function rejects unauthenticated, oversized and private-looking requests before Groq', async () => {
@@ -51,13 +52,24 @@ test('Edge Function enforces per-user limit and masks Groq errors or malformed o
   assert.equal(malformed.status, 503); assert.doesNotMatch(JSON.stringify(await malformed.json()), /test-server-key/);
 });
 
-test('Edge Function uses an explicitly configured server-side model without exposing the key', async () => {
+test('protected database selection overrides optional legacy GROQ_MODEL secret', async () => {
   const { handleRequest } = await import('./supabase/functions/evaluate-answer/index.ts');
   const calls = [];
   const reply = await handleRequest(request(), { fetcher: fetcher(calls), env: name => name === 'GROQ_MODEL' ? 'openai/gpt-oss-20b' : env(name), rateState: new Map() });
   assert.equal(reply.status, 200);
-  assert.equal(JSON.parse(calls[1].options.body).model, 'openai/gpt-oss-20b');
+  assert.equal(JSON.parse(calls[2].options.body).model, 'openai/gpt-oss-120b');
   assert.equal(reply.headers.get('cache-control'), 'no-store');
+});
+
+test('optional GROQ_MODEL is an allowlisted fallback only when no settings row exists', async () => {
+  const { handleRequest } = await import('./supabase/functions/evaluate-answer/index.ts');
+  const calls = [];
+  const noRow = async (url, options) => url.includes('/rest/v1/recall_ai_settings') ? Response.json([]) : fetcher(calls)(url, options);
+  const chosen = await handleRequest(request(), { fetcher: noRow, env: name => name === 'GROQ_MODEL' ? 'openai/gpt-oss-20b' : env(name), rateState: new Map() });
+  assert.equal(chosen.status, 200);
+  assert.equal(JSON.parse(calls.find(call => call.url.includes('api.groq.com')).options.body).model, 'openai/gpt-oss-20b');
+  const invalid = await handleRequest(request(), { fetcher: noRow, env: name => name === 'GROQ_MODEL' ? 'unapproved' : env(name), rateState: new Map() });
+  assert.equal(invalid.status, 503);
 });
 
 test('multilingual appeals fit within the request cap and limits are scoped by user', async () => {

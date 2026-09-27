@@ -16,6 +16,8 @@ const state = {
   history: [],
   sessionHistory: [],
   reviewLog: [],
+  dailyReview: null,
+  newCardLimit: RecallScheduler.DEFAULT_NEW_LIMIT,
   testHistory: [],
   activeTest: null,
   pendingTestCardIds: null,
@@ -142,6 +144,15 @@ window.RecallLibrary = {
     closeFullLibrary(); buildQueue(); setAppView('deck');
     return deck;
   },
+  addCatalogDeck(entry) {
+    const copy = RecallCatalogCore.copyDeck(entry, makeId);
+    const deck = normaliseDeck({ ...copy, order: state.sets.length, createdAt: Date.now(), folderId: null });
+    const previousId = state.activeSetId;
+    state.sets.push(deck); state.activeSetId = deck.id;
+    try { save(); } catch (error) { state.sets.pop(); state.activeSetId = previousId; throw error; }
+    closeFullLibrary(); buildQueue(); setAppView('deck'); showToast(`${deck.name} copied to your decks.`);
+    return deck;
+  },
 };
 
 function setAppView(view = 'home') {
@@ -164,7 +175,19 @@ function load() {
       state.shuffled = saved.shuffled !== false;
       state.sessionHistory = Array.isArray(saved.sessionHistory) ? saved.sessionHistory.filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? saved.performance.filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
       state.testHistory = Array.isArray(saved.testHistory) ? saved.testHistory.filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
-      state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry'].includes(item.outcome)) : [];
+      state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry', ...RecallScheduler.RATINGS].includes(item.outcome)) : [];
+      state.newCardLimit = Number.isInteger(saved.newCardLimit) && saved.newCardLimit >= 0 && saved.newCardLimit <= 100 ? saved.newCardLimit : RecallScheduler.DEFAULT_NEW_LIMIT;
+      if (saved.dailyReview && Array.isArray(saved.dailyReview.queue) && Number.isInteger(saved.dailyReview.index) && saved.dailyReview.index >= 0 && saved.dailyReview.index <= saved.dailyReview.queue.length) {
+        const session = saved.dailyReview;
+        state.dailyReview = {
+          id: String(session.id || ''), scope: session.scope && typeof session.scope === 'object' ? session.scope : {},
+          queue: session.queue.filter(item => item && typeof item.deckId === 'string' && typeof item.cardId === 'string'),
+          index: session.index, startedAt: session.startedAt,
+          timeSpentMs: Number.isFinite(session.timeSpentMs) && session.timeSpentMs >= 0 ? session.timeSpentMs : 0,
+          ratings: Object.fromEntries(RecallScheduler.RATINGS.map(rating => [rating, Number.isInteger(session.ratings?.[rating]) && session.ratings[rating] >= 0 ? session.ratings[rating] : 0])),
+        };
+        state.dailyReview.index = Math.min(state.dailyReview.index, state.dailyReview.queue.length);
+      } else state.dailyReview = null;
       state.currentSession = saved.currentSession?.attempts ? { learned: 0, typos: 0, missedCardIds: [], ...saved.currentSession, missedCardIds: Array.isArray(saved.currentSession.missedCardIds) ? saved.currentSession.missedCardIds : [] } : null;
       state.activity = saved.activity && typeof saved.activity === 'object' ? saved.activity : {};
       state.repeatMissed = Boolean(saved.repeatMissed); state.studyFilter = ['all', 'due', 'flagged', 'missed', 'new', 'learning'].includes(saved.studyFilter) ? saved.studyFilter : 'all'; state.studyMode = saved.studyMode === 'typed' ? 'typed' : 'flip';
@@ -292,16 +315,30 @@ function homeRelativeTime(value) {
 function renderHomeDashboard() {
   if (!elements.homeStats) return;
   const allCards = state.sets.flatMap(set => set.cards);
-  const due = allCards.filter(card => RecallScheduler.isDue(card)).length;
-  const fresh = allCards.filter(card => card.state === 'New').length;
-  const learning = allCards.filter(card => card.state === 'Learning').length;
+  const reviewProgress = RecallScheduler.progress(state.sets, state.reviewLog);
+  const due = reviewProgress.due;
+  const fresh = reviewProgress.new;
+  const learning = reviewProgress.learning;
   const streak = studyStreaks().current;
-  const today = state.activity[localDayKey()]?.reviewed || 0;
+  const today = Math.max(reviewProgress.reviewedToday, state.activity[localDayKey()]?.reviewed || 0);
+  $('#homeDueHeading').textContent = `${due} card${due === 1 ? '' : 's'} due today`;
+  $('#homeReviewNote').textContent = fresh ? `${fresh} new card${fresh === 1 ? '' : 's'} available; daily limit ${state.newCardLimit}.` : 'A small daily session keeps your cards fresh.';
+  $('#dailyNewLimit').value = String(state.newCardLimit);
+  const reviewScope = $('#reviewScope');
+  const selectedScope = reviewScope.value;
+  const topics = [...new Set(state.sets.map(deck => deck.topic || deck.sourceLibrary?.topic).filter(Boolean))].sort();
+  reviewScope.innerHTML = '<option value="all">All decks</option>' +
+    state.sets.map(deck => `<option value="deck:${escapeHtml(deck.id)}">${escapeHtml(deck.name)}</option>`).join('') +
+    topics.map(topic => `<option value="topic:${escapeHtml(topic)}">Topic: ${escapeHtml(topic)}</option>`).join('');
+  reviewScope.value = [...reviewScope.options].some(option => option.value === selectedScope) ? selectedScope : 'all';
+  const activeDaily = state.dailyReview && state.dailyReview.index < state.dailyReview.queue.length && JSON.stringify(state.dailyReview.scope) === JSON.stringify(dailyScope());
+  $('#startReviewBtn').firstChild.textContent = activeDaily ? 'Continue Review ' : 'Start Review ';
   const recentSessions = [...state.sessionHistory].filter(session => session.attempts).slice(-5);
   const recentAccuracy = recentSessions.length ? Math.round(recentSessions.reduce((total, session) => total + RecallCompletion.summariseSession(session).accuracy, 0) / recentSessions.length) : null;
   const stats = [
     ['Due reviews', due, due ? 'Ready when you are' : 'You are caught up'],
     ['New items', fresh, fresh ? 'Waiting to be learned' : 'No new items'],
+    ['Learned', reviewProgress.learned, 'In long-term review'],
     ['In progress', learning, learning ? 'Still being learned' : 'Nothing in progress'],
     ['Study streak', `${streak} ${streak === 1 ? 'day' : 'days'}`, streak ? 'Keep it going' : 'Start today'],
     ['Reviewed today', today, today ? 'Cards reviewed' : 'No activity yet'],
@@ -669,11 +706,12 @@ completionDialog.addEventListener('click', event => {
 function review(result) {
   if (!currentCard() || state.animating) return;
   const answeredCard = currentCard();
-  const schedulingBefore = { dueAt: answeredCard.dueAt, lastReviewedAt: answeredCard.lastReviewedAt, repetitions: answeredCard.repetitions, lapses: answeredCard.lapses, schedulerVersion: answeredCard.schedulerVersion };
+  const schedulingBefore = { dueAt: answeredCard.dueAt, lastReviewedAt: answeredCard.lastReviewedAt, repetitions: answeredCard.repetitions, lapses: answeredCard.lapses, schedulerVersion: answeredCard.schedulerVersion, fsrs: structuredClone(answeredCard.fsrs) };
+  const wasNew = RecallScheduler.isNew(answeredCard);
   const reviewedAt = new Date();
   const responseTimeMs = Math.max(0, reviewedAt.getTime() - (state.cardPresentedAt || reviewedAt.getTime()));
   RecallScheduler.scheduleCard(answeredCard, result, reviewedAt);
-  const reviewEvent = RecallScheduler.createReviewEvent(answeredCard, result, reviewedAt, responseTimeMs, activeSet()?.id);
+  const reviewEvent = RecallScheduler.createReviewEvent(answeredCard, result, reviewedAt, responseTimeMs, activeSet()?.id, wasNew);
   reviewEvent.answerClassification = state.typedChecked?.classification || null;
   reviewEvent.answerResult = state.typedChecked?.result || (result === 'correct' ? 'correct' : 'incorrect');
   reviewEvent.answerScore = state.typedChecked?.score ?? (result === 'correct' ? 100 : 0);
@@ -726,7 +764,7 @@ function addCards(cards, duplicateMode = 'keep', destination = activeSet()) {
   let added = 0; cards.map(card => normaliseCard({ ...card, front: String(card.front || '').trim(), back: String(card.back || '').trim(), id: makeId() })).filter(card => card.front && card.back).forEach(card => {
     const existing = findDuplicate(card, set.cards);
     if (existing && duplicateMode === 'skip') return;
-    if (existing && duplicateMode === 'replace') { Object.assign(existing, { ...card, id: existing.id, flagged: existing.flagged, state: existing.state, missed: existing.missed, correctStreak: existing.correctStreak, reviewCount: existing.reviewCount }); added += 1; return; }
+    if (existing && duplicateMode === 'replace') { Object.assign(existing, { ...card, id: existing.id, flagged: existing.flagged, state: existing.state, missed: existing.missed, correctStreak: existing.correctStreak, reviewCount: existing.reviewCount, dueAt: existing.dueAt, lastReviewedAt: existing.lastReviewedAt, repetitions: existing.repetitions, lapses: existing.lapses, schedulerVersion: existing.schedulerVersion, fsrs: existing.fsrs }); added += 1; return; }
     set.cards.push(card); added += 1;
   });
   if (!added) return 0; save(); if (set.id === activeSet()?.id) buildQueue(); else render(); return added;
@@ -756,7 +794,7 @@ function parseList(text, format) {
   if (open) cards.push(open); return cards.filter(card => card.front && card.back);
 }
 
-const EXPORT_COLUMNS = ['first_side', 'second_side', 'deck_subject', 'deck_domain', 'deck_language_code', 'deck_language_name', 'deck_tags', 'notes', 'hint', 'flagged', 'state', 'missed', 'correct_streak', 'review_count', 'gender', 'original_marker', 'part_of_speech', 'accepted_answers'];
+const EXPORT_COLUMNS = RecallCatalogCore.CSV_COLUMNS;
 function parseDelimited(text, delimiter) {
   const rows = []; let row = []; let value = ''; let quoted = false;
   for (let index = 0; index < text.length; index += 1) { const char = text[index]; const next = text[index + 1]; if (char === '"' && quoted && next === '"') { value += '"'; index += 1; } else if (char === '"') quoted = !quoted; else if (char === delimiter && !quoted) { row.push(value); value = ''; } else if ((char === '\n' || char === '\r') && !quoted) { if (char === '\r' && next === '\n') index += 1; row.push(value); if (row.some(cell => cell.trim())) rows.push(row); row = []; value = ''; } else value += char; }
@@ -973,7 +1011,7 @@ elements.selectCards.addEventListener('click', () => { state.selectingCards = !s
 elements.bulkTag.addEventListener('click', () => { const tag = prompt('Tag to add to selected cards:'); if (!tag) return; selectedCards().forEach(card => { card.tags = cleanTags([...card.tags, tag]); }); save(); render(); });
 elements.bulkRemoveTag.addEventListener('click', () => { const tag = prompt('Tag to remove from selected cards:'); if (!tag) return; selectedCards().forEach(card => { card.tags = card.tags.filter(item => item !== tag.trim()); }); save(); render(); });
 elements.bulkMoveDeck.addEventListener('change', () => { const destination = state.sets.find(set => set.id === elements.bulkMoveDeck.value); const cards = selectedCards(); if (!destination || !cards.length) return; activeSet().cards = activeCards().filter(card => !state.selectedCardIds.has(card.id)); destination.cards.push(...cards); state.selectedCardIds.clear(); save(); buildQueue(); showToast(`${cards.length} card${cards.length === 1 ? '' : 's'} moved to ${destination.name}.`); });
-elements.bulkDuplicate.addEventListener('click', () => { const copies = selectedCards().map(card => ({ ...card, id: makeId(), state: 'New', missed: false, correctStreak: 0, reviewCount: 0 })); if (!copies.length) return; activeSet().cards.push(...copies); save(); buildQueue(); showToast(`${copies.length} card${copies.length === 1 ? '' : 's'} duplicated.`); });
+elements.bulkDuplicate.addEventListener('click', () => { const copies = selectedCards().map(card => normaliseCard({ ...card, id: makeId(), state: 'New', missed: false, correctStreak: 0, reviewCount: 0, dueAt: null, lastReviewedAt: null, repetitions: 0, lapses: 0, fsrs: null, schedulerVersion: null })); if (!copies.length) return; activeSet().cards.push(...copies); save(); buildQueue(); showToast(`${copies.length} card${copies.length === 1 ? '' : 's'} duplicated.`); });
 elements.bulkDelete.addEventListener('click', () => { const cards = selectedCards(); if (!cards.length || !confirm(`Delete ${cards.length} selected card${cards.length === 1 ? '' : 's'}?`)) return; activeSet().cards = activeCards().filter(card => !state.selectedCardIds.has(card.id)); state.selectedCardIds.clear(); save(); buildQueue(); showToast('Selected cards deleted.'); });
 elements.exportDeck.addEventListener('click', () => exportDeck(',')); elements.exportTsv.addEventListener('click', () => exportDeck('\t')); elements.shareDecks.addEventListener('click', exportShare);
 elements.shareDeckOptions.addEventListener('change', () => { elements.shareDeckSummary.textContent = `${elements.shareDeckOptions.querySelectorAll('input:checked').length} selected`; });
@@ -1130,6 +1168,151 @@ function focusHomeNavigation(destination) {
   document.querySelectorAll('[data-home-nav]').forEach(button => button.classList.toggle('active', button.dataset.homeNav === destination));
 }
 setAppView('home');
+let dailyAnswerShown = false;
+let dailyPresentedAt = Date.now();
+let dailyRatingBusy = false;
+function dailyScope() {
+  const selected = $('#reviewScope').value;
+  if (selected.startsWith('deck:')) return { deckId: selected.slice(5) };
+  if (selected.startsWith('topic:')) return { topic: selected.slice(6) };
+  return {};
+}
+function currentDailyItem() {
+  const session = state.dailyReview;
+  if (!session) return null;
+  while (session.index < session.queue.length) {
+    const item = session.queue[session.index];
+    const deck = state.sets.find(set => set.id === item.deckId);
+    const card = deck?.cards.find(entry => entry.id === item.cardId);
+    if (card) return { deck, card };
+    session.index += 1;
+    save();
+  }
+  return null;
+}
+function startDailyReview(scope = dailyScope()) {
+  const scopeValue = scope.deckId ? `deck:${scope.deckId}` : scope.topic ? `topic:${scope.topic}` : 'all';
+  if ([...$('#reviewScope').options].some(option => option.value === scopeValue)) $('#reviewScope').value = scopeValue;
+  const active = state.dailyReview && state.dailyReview.index < state.dailyReview.queue.length;
+  if (!active || JSON.stringify(state.dailyReview.scope) !== JSON.stringify(scope)) {
+    state.dailyReview = {
+      id: makeId(), scope, queue: RecallScheduler.buildDailyQueue(state.sets, state.reviewLog, state.newCardLimit, new Date(), scope),
+      index: 0, startedAt: new Date().toISOString(), timeSpentMs: 0,
+      ratings: { Again: 0, Hard: 0, Good: 0, Easy: 0 },
+    };
+    save();
+  }
+  dailyAnswerShown = false;
+  dailyPresentedAt = Date.now();
+  setAppView('review');
+  renderDailyReview();
+  $('#dailyReviewCard').focus({ preventScroll: true });
+}
+function renderDailyReview() {
+  const session = state.dailyReview;
+  const current = currentDailyItem();
+  const done = !current;
+  $('#dailyReviewTitle').textContent = done ? 'Session complete.' : 'Make it stick.';
+  $('#dailyReviewProgress').textContent = session ? `${session.index} of ${session.queue.length} cards reviewed` : '';
+  $('#dailyReviewCard').hidden = done;
+  $('#revealReviewBtn').hidden = done || dailyAnswerShown;
+  $('#dailyRatingButtons').hidden = done || !dailyAnswerShown;
+  $('#dailyReviewSummary').hidden = !done;
+  if (done) {
+    const counts = session?.ratings || { Again: 0, Hard: 0, Good: 0, Easy: 0 };
+    const reviewed = Object.values(counts).reduce((total, value) => total + value, 0);
+    const retained = counts.Hard + counts.Good + counts.Easy;
+    const elapsed = Math.round((session?.timeSpentMs || 0) / 1000);
+    const nextDue = state.sets.flatMap(deck => deck.cards).filter(card => !RecallScheduler.isNew(card) && new Date(card.dueAt).getTime() > Date.now()).map(card => card.dueAt).sort()[0];
+    $('#dailyReviewSummary').innerHTML = `<h2>${reviewed ? 'Nice work today.' : 'All caught up.'}</h2><p>${reviewed} card${reviewed === 1 ? '' : 's'} reviewed · ${Math.floor(elapsed / 60)}m ${elapsed % 60}s spent</p><div class="daily-summary-counts"><span>Again <b>${counts.Again}</b></span><span>Hard <b>${counts.Hard}</b></span><span>Good <b>${counts.Good}</b></span><span>Easy <b>${counts.Easy}</b></span></div><p>Approximate recall: ${reviewed ? Math.round(retained / reviewed * 100) : 0}%</p><p id="dailyNextDue"></p><button class="primary-button" id="dailyDoneBtn" type="button">Back to home</button>`;
+    $('#dailyNextDue').textContent = nextDue ? `Next review: ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(nextDue))}` : 'No further reviews scheduled yet.';
+    return;
+  }
+  $('#dailyReviewDeck').textContent = current.deck.name;
+  $('#dailyReviewFront').textContent = displayCardSide(current.card, 'front');
+  $('#dailyReviewBack').textContent = current.card.back;
+  $('#dailyReviewAnswer').hidden = !dailyAnswerShown;
+  if (dailyAnswerShown) {
+    const previews = RecallScheduler.previewRatings(current.card);
+    $('#dailyRatingButtons').querySelectorAll('[data-review-rating]').forEach(button => {
+      button.querySelector('small').textContent = RecallScheduler.formatInterval(previews[button.dataset.reviewRating].intervalMs);
+    });
+  }
+}
+function revealDailyAnswer() {
+  if (state.currentView !== 'review' || !currentDailyItem() || dailyAnswerShown) return;
+  dailyAnswerShown = true;
+  renderDailyReview();
+  $('#dailyRatingButtons [data-review-rating="Good"]').focus({ preventScroll: true });
+}
+function rateDailyCard(rating) {
+  if (state.currentView !== 'review' || !dailyAnswerShown || dailyRatingBusy || !RecallScheduler.RATINGS.includes(rating)) return;
+  const current = currentDailyItem();
+  if (!current) return;
+  dailyRatingBusy = true;
+  const { deck, card } = current;
+  const beforeCard = structuredClone(card);
+  const beforeSession = structuredClone(state.dailyReview);
+  const reviewedAt = new Date();
+  const activityDay = localDayKey(reviewedAt);
+  const beforeActivity = state.activity[activityDay] ? structuredClone(state.activity[activityDay]) : null;
+  const responseTimeMs = Math.min(30 * 60 * 1000, Math.max(0, reviewedAt.getTime() - dailyPresentedAt));
+  const wasNew = RecallScheduler.isNew(card);
+  let addedEvent = false;
+  try {
+    RecallScheduler.scheduleCard(card, rating, reviewedAt);
+    card.reviewCount += 1;
+    card.correctStreak = rating === 'Again' ? 0 : card.correctStreak + 1;
+    card.missed = rating === 'Again';
+    card.state = card.fsrs.state === 2 ? 'Mastered' : 'Learning';
+    const learned = beforeCard.state !== 'Mastered' && card.state === 'Mastered';
+    state.reviewLog.push(RecallScheduler.createReviewEvent(card, rating, reviewedAt, responseTimeMs, deck.id, wasNew));
+    addedEvent = true;
+    recordActivity(card, learned);
+    state.dailyReview.ratings[rating] += 1;
+    state.dailyReview.timeSpentMs += responseTimeMs;
+    state.dailyReview.index += 1;
+    save();
+  } catch {
+    Object.assign(card, beforeCard);
+    state.dailyReview = beforeSession;
+    if (addedEvent) state.reviewLog.pop();
+    if (beforeActivity) state.activity[activityDay] = beforeActivity; else delete state.activity[activityDay];
+    showToast('Review could not be saved. Check local storage and try again.');
+    dailyRatingBusy = false;
+    return;
+  }
+  dailyAnswerShown = false;
+  dailyPresentedAt = Date.now();
+  dailyRatingBusy = false;
+  renderDailyReview();
+  renderHomeDashboard();
+  if (currentDailyItem()) $('#dailyReviewCard').focus({ preventScroll: true });
+}
+$('#startReviewBtn').addEventListener('click', () => startDailyReview());
+$('#deckStartReviewBtn').addEventListener('click', () => startDailyReview({ deckId: activeSet()?.id }));
+$('#dailyNewLimit').addEventListener('change', event => {
+  const next = Math.max(0, Math.min(100, Math.floor(Number(event.target.value) || 0)));
+  state.newCardLimit = next;
+  save();
+  renderHomeDashboard();
+});
+$('#reviewScope').addEventListener('change', () => {
+  const session = state.dailyReview;
+  $('#startReviewBtn').firstChild.textContent = session && session.index < session.queue.length && JSON.stringify(session.scope) === JSON.stringify(dailyScope()) ? 'Continue Review ' : 'Start Review ';
+});
+$('#leaveReviewBtn').addEventListener('click', () => setAppView('home'));
+$('#revealReviewBtn').addEventListener('click', revealDailyAnswer);
+$('#dailyRatingButtons').addEventListener('click', event => rateDailyCard(event.target.closest('[data-review-rating]')?.dataset.reviewRating));
+$('#dailyReviewSummary').addEventListener('click', event => { if (event.target.closest('#dailyDoneBtn')) setAppView('home'); });
+document.addEventListener('keydown', event => {
+  if (state.currentView !== 'review' || event.repeat || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+  if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); setAppView('home'); return; }
+  if (event.code === 'Space' && !dailyAnswerShown) { event.preventDefault(); event.stopImmediatePropagation(); revealDailyAnswer(); return; }
+  const rating = { '1': 'Again', '2': 'Hard', '3': 'Good', '4': 'Easy' }[event.key];
+  if (rating && dailyAnswerShown) { event.preventDefault(); event.stopImmediatePropagation(); rateDailyCard(rating); }
+  else event.stopImmediatePropagation();
+}, true);
 function openHomeStudy(deckId = state.activeSetId, continueSession = false) {
   const deck = state.sets.find(set => set.id === deckId);
   if (!deck) return;

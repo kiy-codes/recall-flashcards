@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0 - Daily review, AI management, and built-in decks (2026-09-27)
+
+- Added FSRS-based daily review sessions with Again/Hard/Good/Easy ratings, due and new-card limits, interval previews, progress and streaks.
+- Added a searchable built-in flashcard library, three 50-card Edexcel Chemistry decks, and a reusable CSV-generation skill. Pre-made decks are copied into each user's own editable library.
+- Added server-side AI provider/model management for admins, with allowlisted Groq, NVIDIA NIM, OpenAI and Gemini options and safe connection tests.
+- Kept answer evaluation optional and local-first, with an explicit AI appeal flow and graceful fallback when AI is unavailable.
+- Improved pre-made library layout with subject grouping and a responsive topic grid.
+
 ## 1.2.0 - Deck sharing, local packages, and security hardening (2026-09-26)
 
 - Added private, expiring Supabase deck links with read-only previews, independent local copies, revocation, and owner-scoped RLS; moved Add cards inside Deck cards.

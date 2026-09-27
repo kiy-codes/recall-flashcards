@@ -1,6 +1,6 @@
 {
   "name": "recall-flashcards",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A focused, keyboard-first flashcard app for desktop and web",
   "main": "main.js",
   "author": "Recall",
@@ -14,7 +14,8 @@
     "start": "electron .",
     "predev": "npm run build:client",
     "dev": "electron .",
-    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js metadata-utils.test.js ai-evaluator.test.js ai-function.test.js sync.test.js sync-sql.test.js share.test.js share-sql.test.js release-build.test.js security.test.js",
+    "test": "node --test test-utils.test.js subject-utils.test.js scheduler.test.js completion-utils.test.js metadata-utils.test.js catalog.test.js ai-evaluator.test.js ai-function.test.js admin-ai.test.js sync.test.js sync-sql.test.js share.test.js share-sql.test.js release-build.test.js security.test.js",
+    "library:validate": "node scripts/validate-library.js",
     "test:smoke": "node scripts/run-smoke.js",
     "dist": "node scripts/dist-local.js win nsis",
     "dist:portable": "node scripts/dist-local.js win portable",
@@ -40,8 +41,12 @@
       "index.html",
       "styles.css",
       "app.js",
+      "catalog-core.js",
+      "catalog-data.js",
+      "catalog-ui.js",
       "test-utils.js",
       "subject-utils.js",
+      "fsrs-vendor.js",
       "scheduler.js",
       "completion-utils.js",
       "metadata-utils.js",
@@ -51,6 +56,7 @@
       "share-core.js",
       "share-service.js",
       "account-ui.js",
+      "admin-ai.js",
       "share-ui.js",
       "cloud-client.js",
       "web-offline.js",
@@ -129,7 +135,8 @@
     "esbuild": "0.28.2"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.117.1"
+    "@supabase/supabase-js": "2.117.1",
+    "ts-fsrs": "5.4.2"
   },
   "engines": {
     "node": ">=22.12.0"

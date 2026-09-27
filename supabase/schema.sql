@@ -1,5 +1,7 @@
 -- Run in the SQL editor of a project in a FREE Supabase organization.
 -- Ordinary Postgres table, policies, and trigger: no Edge Functions or add-ons.
+-- Provision AI administrators only from the trusted SQL editor, never the client:
+-- insert into public.recall_ai_admins(user_id) values ('YOUR-AUTH-USER-UUID');
 begin;
 
 create table if not exists public.recall_libraries (
@@ -55,6 +57,63 @@ drop trigger if exists recall_library_revision on public.recall_libraries;
 create trigger recall_library_revision before insert or update on public.recall_libraries
   for each row execute function public.recall_stamp_library();
 
+commit;
+
+-- Global AI selection. Membership is provisioned out of band by a database
+-- administrator; clients cannot grant themselves this role.
+begin;
+create table if not exists public.recall_ai_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+alter table public.recall_ai_admins enable row level security;
+alter table public.recall_ai_admins force row level security;
+revoke all on public.recall_ai_admins from public, anon, authenticated;
+grant select on public.recall_ai_admins to authenticated;
+drop policy if exists recall_ai_admin_self on public.recall_ai_admins;
+create policy recall_ai_admin_self on public.recall_ai_admins
+  for select to authenticated using (user_id = (select auth.uid()));
+
+create table if not exists public.recall_ai_settings (
+  id boolean primary key default true check (id),
+  provider text not null default 'groq',
+  model text not null default 'openai/gpt-oss-120b',
+  constraint recall_ai_approved_model check (
+    (provider = 'groq' and model in ('openai/gpt-oss-120b', 'openai/gpt-oss-20b')) or
+    (provider = 'nvidia' and model in ('meta/llama-3.3-70b-instruct', 'meta/llama-3.1-8b-instruct')) or
+    (provider = 'openai' and model in ('gpt-4.1-mini', 'gpt-4o-mini')) or
+    (provider = 'gemini' and model in ('gemini-3.5-flash', 'gemini-3.5-flash-lite'))
+  )
+);
+insert into public.recall_ai_settings(id, provider, model)
+  values (true, 'groq', 'openai/gpt-oss-120b') on conflict (id) do nothing;
+alter table public.recall_ai_settings enable row level security;
+alter table public.recall_ai_settings force row level security;
+revoke all on public.recall_ai_settings from public, anon, authenticated;
+grant select on public.recall_ai_settings to authenticated;
+grant update (provider, model) on public.recall_ai_settings to authenticated;
+drop policy if exists recall_ai_settings_admin_select on public.recall_ai_settings;
+create policy recall_ai_settings_admin_select on public.recall_ai_settings
+  for select to authenticated using (exists (select 1 from public.recall_ai_admins where user_id = (select auth.uid())));
+drop policy if exists recall_ai_settings_admin_update on public.recall_ai_settings;
+create policy recall_ai_settings_admin_update on public.recall_ai_settings
+  for update to authenticated using (exists (select 1 from public.recall_ai_admins where user_id = (select auth.uid())))
+  with check (exists (select 1 from public.recall_ai_admins where user_id = (select auth.uid())));
+
+create table if not exists public.recall_ai_provider_tests (
+  provider text primary key check (provider in ('groq', 'nvidia', 'openai', 'gemini')),
+  status text not null default 'not_tested' check (status in ('not_tested', 'working', 'failed')),
+  last_successful_test_at timestamptz,
+  last_tested_at timestamptz
+);
+insert into public.recall_ai_provider_tests(provider) values ('groq'), ('nvidia'), ('openai'), ('gemini')
+  on conflict (provider) do nothing;
+alter table public.recall_ai_provider_tests enable row level security;
+alter table public.recall_ai_provider_tests force row level security;
+revoke all on public.recall_ai_provider_tests from public, anon, authenticated;
+grant select on public.recall_ai_provider_tests to authenticated;
+drop policy if exists recall_ai_tests_admin_select on public.recall_ai_provider_tests;
+create policy recall_ai_tests_admin_select on public.recall_ai_provider_tests
+  for select to authenticated using (exists (select 1 from public.recall_ai_admins where user_id = (select auth.uid())));
 commit;
 
 -- Link shares are immutable snapshots of explicitly selected card content.

@@ -68,11 +68,25 @@
           <div><p class="eyebrow">Welcome back</p><h1 id="homeHeading">Ready to <em>consolidate?</em></h1><p id="homeMessage">Your next focused revision session starts here.</p></div>
           <div class="home-actions"><button class="primary-button" id="homeStartStudyBtn" type="button">Start studying <span>→</span></button><button class="text-button" id="homeContinueStudyBtn" type="button" hidden>Continue studying</button></div>
         </header>
+        <section class="daily-review-prompt" aria-labelledby="homeDueHeading">
+          <div><p class="eyebrow">Today's review</p><h2 id="homeDueHeading">0 cards due today</h2><p id="homeReviewNote">A small daily session keeps your cards fresh.</p></div>
+          <div class="daily-review-start"><label>Review scope<select id="reviewScope"><option value="all">All decks</option></select></label><label>New cards/day<input id="dailyNewLimit" type="number" min="0" max="100" value="20" inputmode="numeric" /></label><button class="primary-button" id="startReviewBtn" type="button">Start Review <span>→</span></button></div>
+        </section>
         <div class="home-stats" id="homeStats" aria-live="polite"></div>
         <div class="home-grid">
           <section class="home-panel home-recent"><div class="home-panel-head"><div><p class="eyebrow">Pick up where you left off</p><h2>Recent decks</h2></div><button class="text-button" data-home-action="library" type="button">Full library</button></div><div id="homeRecentDecks"></div></section>
           <section class="home-panel home-library-shortcuts"><div><p class="eyebrow">Your collection</p><h2>Library</h2></div><label class="library-search home-library-search"><span>⌕</span><input id="homeLibrarySearch" type="search" placeholder="Search decks and folders" autocomplete="off" /></label><div class="home-library-actions"><button class="text-button" data-home-action="new-deck" type="button">Create deck</button><button class="text-button" data-home-action="browse-folders" type="button">Browse folders</button><button class="text-button" data-home-action="library" type="button">Open library</button></div><p class="home-library-note" id="homeLibraryNote"></p></section>
         </div>
+      </section>
+
+      <section class="daily-review-page" id="dailyReview" data-revision-workspace data-app-view="review" aria-label="Daily review" hidden>
+        <header class="daily-review-head"><div><p class="eyebrow">Daily review</p><h1 id="dailyReviewTitle">Make it stick.</h1><p id="dailyReviewProgress" aria-live="polite"></p></div><button class="text-button" id="leaveReviewBtn" type="button">Back to home</button></header>
+        <div class="daily-review-card" id="dailyReviewCard" tabindex="0" aria-live="polite">
+          <p id="dailyReviewDeck"></p><div id="dailyReviewFront" class="daily-review-front"></div>
+          <div id="dailyReviewAnswer" class="daily-review-answer" hidden><span>Answer</span><p id="dailyReviewBack"></p></div>
+        </div>
+        <div class="daily-review-controls"><button class="primary-button" id="revealReviewBtn" type="button">Reveal answer <kbd>Space</kbd></button><div class="daily-rating-buttons" id="dailyRatingButtons" hidden><button data-review-rating="Again" type="button">Again <small></small><kbd>1</kbd></button><button data-review-rating="Hard" type="button">Hard <small></small><kbd>2</kbd></button><button data-review-rating="Good" type="button">Good <small></small><kbd>3</kbd></button><button data-review-rating="Easy" type="button">Easy <small></small><kbd>4</kbd></button></div></div>
+        <div class="daily-review-summary" id="dailyReviewSummary" hidden></div>
       </section>
 
       <section class="hero" id="study" data-revision-workspace data-app-view="study">
@@ -215,7 +229,7 @@
       <section class="deck-section" id="deck" data-revision-workspace data-app-view="deck">
         <div class="deck-heading">
           <div><p class="eyebrow">Your collection</p><h2>Deck cards</h2></div>
-          <div class="deck-heading-actions"><button class="primary-button" id="openAddCardsBtn" type="button">+ Add cards</button><button class="text-button" id="openDeckShareBtn" type="button">Share deck</button><button class="text-button" id="exportDeckBtn" type="button">Export CSV</button><button class="text-button" id="exportTsvBtn" type="button">Export TSV</button><details class="share-picker"><summary>Share decks <span id="shareDeckSummary">Choose decks</span></summary><div class="share-picker-options" id="shareDeckOptions"></div></details><button class="text-button" id="shareDecksBtn" type="button">Export share file</button><button class="danger-button" id="clearDeckBtn" type="button" disabled>Clear deck</button></div>
+          <div class="deck-heading-actions"><button class="primary-button" id="openAddCardsBtn" type="button">+ Add cards</button><button class="text-button" id="deckStartReviewBtn" type="button">Start Review</button><button class="text-button" id="openDeckShareBtn" type="button">Share deck</button><button class="text-button" id="exportDeckBtn" type="button">Export CSV</button><button class="text-button" id="exportTsvBtn" type="button">Export TSV</button><details class="share-picker"><summary>Share decks <span id="shareDeckSummary">Choose decks</span></summary><div class="share-picker-options" id="shareDeckOptions"></div></details><button class="text-button" id="shareDecksBtn" type="button">Export share file</button><button class="danger-button" id="clearDeckBtn" type="button" disabled>Clear deck</button></div>
         </div>
         <div class="card-management">
           <div class="card-management-main"><label class="deck-search"><span>⌕</span><input id="deckSearch" type="search" placeholder="Search cards, notes, hints, or tags" autocomplete="off" /></label><button class="text-button" id="clearSearchBtn" type="button">Clear search</button><details class="tag-picker"><summary>Tags <span id="tagFilterSummary">All tags</span></summary><div class="tag-picker-options" id="tagFilterOptions"></div></details><button class="text-button" id="manageTagsBtn" type="button">Manage tags</button></div>
@@ -243,8 +257,15 @@
     </main>
     <section class="full-library" id="fullLibrary" hidden aria-label="Full library">
       <header class="full-library-head"><div><p class="eyebrow">Your collection</p><h1>All study sets.</h1></div><button class="drawer-close" id="fullLibraryClose" type="button">×</button></header>
-      <div class="full-library-tools"><label class="library-search"><span>⌕</span><input id="fullLibrarySearch" type="search" placeholder="Filter sets and folders" autocomplete="off" /></label><label class="library-sort">Sort<select id="fullLibrarySort"><option value="manual">Manual order</option><option value="subject">Subject</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="cards-desc">Most cards</option><option value="cards-asc">Fewest cards</option></select></label><button class="drawer-action" id="fullNewSetBtn" type="button">+ New set</button><button class="drawer-action" id="fullNewFolderBtn" type="button">+ Folder</button><button class="drawer-action" id="sharedWithMeBtn" type="button">Shared with me</button></div>
+      <div class="full-library-tools"><label class="library-search"><span>⌕</span><input id="fullLibrarySearch" type="search" placeholder="Filter sets and folders" autocomplete="off" /></label><label class="library-sort">Sort<select id="fullLibrarySort"><option value="manual">Manual order</option><option value="subject">Subject</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="cards-desc">Most cards</option><option value="cards-asc">Fewest cards</option></select></label><button class="drawer-action" id="fullNewSetBtn" type="button">+ New set</button><button class="drawer-action" id="fullNewFolderBtn" type="button">+ Folder</button><button class="drawer-action" id="sharedWithMeBtn" type="button">Shared with me</button><button class="drawer-action" id="browseCatalogBtn" type="button">Browse pre-made decks</button></div>
       <div class="full-library-grid" id="fullLibraryGrid"></div>
+    </section>
+    <section class="full-library catalog-library" id="catalogLibrary" hidden aria-label="Pre-made flashcard library">
+      <header class="full-library-head"><div><p class="eyebrow">Ready to study</p><h1>Flashcard library.</h1></div><button class="drawer-close" id="catalogClose" type="button" aria-label="Back to your decks">×</button></header>
+      <p class="catalog-intro">Browse starter decks grouped by subject and topic. Preview before copying; your copy is yours to edit or delete.</p>
+      <div class="catalog-tools"><label>Search<input id="catalogSearch" type="search" placeholder="Search decks and topics" autocomplete="off" /></label><label>Qualification<select id="catalogQualification"></select></label><label>Exam board<select id="catalogBoard"></select></label><label>Subject<select id="catalogSubject"></select></label><label>Topic<select id="catalogTopic"></select></label><label>Subtopic<select id="catalogSubtopic"></select></label></div>
+      <p id="catalogStatus" role="status" aria-live="polite"></p><div class="deck-grid catalog-grid" id="catalogGrid"></div>
+      <section class="catalog-preview" id="catalogPreview" hidden aria-labelledby="catalogPreviewTitle"><div class="catalog-preview-head"><div><p class="eyebrow">Deck preview</p><h2 id="catalogPreviewTitle"></h2><p id="catalogPreviewMeta"></p><p id="catalogPreviewDescription"></p></div><button class="text-button" id="catalogBack" type="button">Back to results</button></div><div class="catalog-preview-cards" id="catalogPreviewCards"></div><button class="primary-button" id="catalogAdd" type="button">Copy to my decks</button><p id="catalogError" role="alert" hidden></p></section>
     </section>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="library-dialog-backdrop" id="cardEditorDialog" hidden><form class="library-dialog card-editor" id="cardEditorForm"><p class="eyebrow">Edit card</p><h3>Card details</h3><label>First side<input id="editFrontInput" required maxlength="700" /></label><label>Second side<input id="editBackInput" required maxlength="700" /></label><label>Deck tags<input id="editTagsInput" maxlength="300" /></label><label>Gender<select id="editGenderInput"><option value="unknown">Unknown</option><option value="masculine">Masculine</option><option value="feminine">Feminine</option><option value="neuter">Neuter</option><option value="common">Common</option><option value="not_applicable">Not applicable</option></select></label><label>Part of speech<input id="editPartOfSpeechInput" maxlength="100" placeholder="Optional, e.g. noun" /></label><label>Accepted alternatives<input id="editAlternativesInput" maxlength="500" placeholder="Comma-separated alternatives" /></label><label>Hint<input id="editHintInput" maxlength="700" /></label><label>Notes<textarea id="editNotesInput" maxlength="2000"></textarea></label><div class="library-dialog-actions"><button class="dialog-cancel" id="cardEditorCancel" type="button">Cancel</button><button class="primary-button" type="submit">Save card</button></div></form></div>
@@ -252,17 +273,22 @@
     <div class="library-dialog-backdrop" id="importPreviewDialog" hidden><section class="import-preview"><header><div><p class="eyebrow">Safe import</p><h3>Review your import</h3></div><button class="drawer-close" id="importPreviewClose" type="button">×</button></header><div class="import-map"><label>First side<select id="mapFront"></select></label><label>Second side<select id="mapBack"></select></label><label>Tags<select id="mapTags"></select></label><label>Notes<select id="mapNotes"></select></label><label>Hint<select id="mapHint"></select></label><label>Destination<select id="importDestination"></select></label><label id="shareImportModeWrap" hidden>Sharing<select id="shareImportMode"><option value="merge">Merge deck names</option><option value="copy">Create deck copies</option><option value="skip">Skip matching decks</option></select></label><label>Duplicates<select id="duplicateMode"><option value="skip">Skip duplicates</option><option value="keep">Keep duplicates</option><option value="replace">Replace existing cards</option></select></label></div><p id="importPreviewSummary" class="import-preview-summary"></p><div id="importPreviewRows" class="import-preview-rows"></div><footer><button class="dialog-cancel" id="importPreviewCancel" type="button">Cancel</button><button class="primary-button" id="confirmImportBtn" type="button">Import reviewed rows</button></footer></section></div>
     <script src="test-utils.js"></script>
     <script src="subject-utils.js"></script>
+    <script src="fsrs-vendor.js"></script>
     <script src="scheduler.js"></script>
     <script src="completion-utils.js"></script>
     <script src="metadata-utils.js"></script>
+    <script src="catalog-core.js"></script>
+    <script src="catalog-data.js"></script>
     <script src="ai-evaluator.js"></script>
     <script src="sync-core.js"></script>
     <script src="share-core.js"></script>
     <script src="app.js"></script>
+    <script src="catalog-ui.js"></script>
     <script src="cloud-client.js"></script>
     <script src="sync-service.js"></script>
     <script src="share-service.js"></script>
     <script src="account-ui.js"></script>
+    <script src="admin-ai.js"></script>
     <script src="share-ui.js"></script>
     <script src="web-offline.js"></script>
   </body>

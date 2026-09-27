@@ -71,7 +71,7 @@ test('release paths reject directory links instead of following them', t => {
 
 test('staging bundles an offline client without modifying development/web output or copying secrets', async t => {
   const output = fixture(t);
-  const generated = ['cloud-client.js', 'dist-web/cloud-client.js'].map(file => path.join(__dirname, file));
+  const generated = ['cloud-client.js', 'fsrs-vendor.js', 'dist-web/cloud-client.js'].map(file => path.join(__dirname, file));
   const before = generated.map(file => fs.existsSync(file) ? fs.readFileSync(file) : null);
   const app = await stageApp(output, { ...metadata, privateSecret: 'do-not-copy' }, releaseConfig(false));
   const stagedMetadata = JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'));
@@ -79,6 +79,7 @@ test('staging bundles an offline client without modifying development/web output
   assert.equal(stagedMetadata.privateSecret, undefined);
   assert.equal(fs.existsSync(path.join(app, '.env.local')), false);
   assert.equal(fs.existsSync(path.join(app, 'node_modules')), false);
+  assert.equal(fs.existsSync(path.join(app, 'fsrs-vendor.js')), true);
   const context = { window: {}, URL, TextEncoder, TextDecoder, console, setTimeout, clearTimeout };
   vm.runInNewContext(fs.readFileSync(path.join(app, 'cloud-client.js'), 'utf8'), context);
   assert.equal(context.window.RecallCloudClient.enabled, false);

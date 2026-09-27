@@ -7,8 +7,8 @@
   const STORAGE_KEY = 'recall-library-v2';
   const RECOVERY_KEY = 'recall-library-before-cloud-v1';
   const MAX_BYTES = 2 * 1024 * 1024;
-  const FIELDS = ['sets', 'folders', 'activeSetId', 'sessionHistory', 'testHistory', 'reviewLog', 'currentSession', 'activity', 'shuffled', 'repeatMissed', 'studyFilter', 'studyMode', 'theme', 'keybinds', 'subjectColors'];
-  const PREFERENCES = new Set(['activeSetId', 'shuffled', 'repeatMissed', 'studyFilter', 'studyMode', 'theme', 'keybinds']);
+  const FIELDS = ['sets', 'folders', 'activeSetId', 'sessionHistory', 'testHistory', 'reviewLog', 'dailyReview', 'newCardLimit', 'currentSession', 'activity', 'shuffled', 'repeatMissed', 'studyFilter', 'studyMode', 'theme', 'keybinds', 'subjectColors'];
+  const PREFERENCES = new Set(['activeSetId', 'shuffled', 'repeatMissed', 'studyFilter', 'studyMode', 'newCardLimit', 'theme', 'keybinds']);
   const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const clone = value => JSON.parse(JSON.stringify(value));
   function canonical(value) {
@@ -67,6 +67,8 @@
     for (const key of ['sessionHistory', 'testHistory', 'reviewLog']) {
       if (value[key] !== undefined && (!Array.isArray(value[key]) || value[key].some(item => !plain(item)))) bad('invalid ' + key + '.');
     }
+    if (value.newCardLimit !== undefined && (!Number.isInteger(value.newCardLimit) || value.newCardLimit < 0 || value.newCardLimit > 100)) bad('daily new-card limit must be 0–100.');
+    if (value.dailyReview !== undefined && value.dailyReview !== null && (!plain(value.dailyReview) || !Array.isArray(value.dailyReview.queue) || !Number.isInteger(value.dailyReview.index) || value.dailyReview.index < 0 || value.dailyReview.index > value.dailyReview.queue.length || value.dailyReview.queue.some(item => !plain(item) || typeof item.deckId !== 'string' || typeof item.cardId !== 'string' || item.deckId.length > 128 || item.cardId.length > 128))) bad('invalid daily review session.');
     for (const test of value.testHistory || []) if (!Array.isArray(test.questions) || !Array.isArray(test.answers) || test.questions.some(item => !plain(item)) || test.answers.some(item => !plain(item))) bad('invalid test history.');
     for (const key of ['activity', 'keybinds', 'subjectColors']) if (value[key] !== undefined && !plain(value[key])) bad('invalid ' + key + '.');
     for (const day of Object.values(value.activity || {})) if (!plain(day)) bad('invalid activity entry.');

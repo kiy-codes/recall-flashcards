@@ -5,6 +5,7 @@ mobile/node_modules/
 # Packaged desktop builds
 release/
 release-*/
+/installers/
 
 # Private pre-public-release installers stay local; retain only their notes.
 archive/internal-development-builds/*
@@ -19,6 +20,8 @@ supabase/functions/.env*
 
 # Generated public client and static web output
 cloud-client.js
+fsrs-vendor.js
+catalog-data.js
 dist-web/
 
 # Temporary Codex attachments and screenshots

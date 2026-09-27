@@ -1,6 +1,6 @@
 # Recall Flashcards
 
-**v1.2.0 — Deck sharing, cross-platform packages, and security hardening**
+**v1.3.0 — Daily review, AI management, and built-in decks**
 
 Recall is a calm, local-first flashcard app for desktop and web. It is built with Electron and keeps decks, folders, cards, learning progress, session history, tests, and preferences on the device running the app.
 
@@ -12,7 +12,7 @@ Recall is a calm, local-first flashcard app for desktop and web. It is built wit
 - Customise the names of both card sides for every deck.
 - Study with flip cards or typed answers, including forgiving answer matching.
 - Use keyboard controls, shuffle, Due cards and other card filters, hints, flags, undo, fullscreen study, and custom keybinds.
-- Keep a local review schedule: new cards are due immediately, successful reviews move forward through gentle intervals, and missed cards return soon.
+- Review due cards daily with FSRS scheduling, four ratings, a configurable new-card limit, and a study streak.
 - Track New, Learning, and Mastered card states, missed cards, streaks, session accuracy, and activity.
 - Add tags, search cards, edit cards in bulk, detect duplicates, and export decks.
 - Use Test Mode for typed, multiple-choice, or mixed assessments with time limits, saved results, review, retry, and history.
@@ -20,6 +20,7 @@ Recall is a calm, local-first flashcard app for desktop and web. It is built wit
 - Set a subject, domain, optional language, and deck tags in **Deck details**. Tags describe the whole deck; legacy per-card tags are migrated safely when you open the updated app.
 - Add optional word details such as grammatical gender, source markers, part of speech, and accepted alternatives. Language decks can offer a gender quiz where the data supports it.
 - Sort Library decks by Subject, name, card count, or manual order.
+- Browse a small built-in flashcard library by qualification, exam board, subject and topic; preview and copy decks into your own editable collection.
 - Choose light, dark, or system theme and set subject colours locally.
 - Optionally sign in with a Supabase email/password account and manually upload or download a full-library cloud snapshot. Local study remains available offline; sync always asks before replacing data.
 
@@ -51,6 +52,14 @@ Run the Electron interaction smoke test:
 npm run test:smoke
 ```
 
+## Built-in flashcard library and generator skill
+
+Open **Library → Browse pre-made decks** to search or filter starter decks, preview cards, and choose **Copy to my decks**. This makes new card/deck IDs and fresh study progress in your local collection; editing or deleting that copy never changes the version-controlled original. The library works offline in Electron and in a cached web build. The two small example decks are marked **unverified samples**, not exam-board endorsements or complete syllabus coverage; their topics were checked against the [AQA GCSE Physics Waves specification](https://www.aqa.org.uk/subjects/physics/gcse/physics-8463/specification/subject-content/waves) and [OCR A Level Biology A overview](https://www.ocr.org.uk/qualifications/as-and-alevel/biology-a-h020-h420-from-2015/specification-at-a-glance/). Three additional 50-card Edexcel International GCSE Chemistry decks cover **Gases in the Atmosphere**, **The Reactivity Series**, and **Solubility and Separation**. They follow the [Pearson Chemistry specification](https://qualifications.pearson.com/content/dam/pdf/International%20GCSE/Chemistry/2017/specification-and-sample-assessments/international-gcse-chemistry-2017-specification.pdf) topics supplied in the request, including acid rain. The third supplied section was labelled “kinetic theory,” but its listed objectives concern solubility and separation; the deck follows the listed objectives. These decks are also **unverified drafts** pending teacher review, not official Pearson material.
+
+Source decks live as UTF-8 CSV under [`content/flashcard-library/`](content/flashcard-library/), with title, description, qualification, exam board, subject, topic/subtopic, version, verified flag, path and exact card count in [`index.json`](content/flashcard-library/index.json). The CSV header is Recall's actual 18-column **Export CSV** format; `catalog-core.js` validates it, and the existing exporter reads the same column list. Run `npm run library:validate` to check every deck. A new standalone CSV plus single metadata JSON object can be checked with `npm run library:validate -- --metadata entry.json --csv deck.csv`. Then place the CSV under `content/flashcard-library/`, add its entry to `index.json`, and run the full validator and build. Keep `verified` false until a human checks every card against the named specification. The build generates an ignored `catalog-data.js` from validated source files; only that static catalog data is packaged, with no backend or user data.
+
+The canonical, model-agnostic generator instructions are in [`skills/recall-flashcards/SKILL.md`](skills/recall-flashcards/SKILL.md). Give that file to Claude or ChatGPT/Codex (or install its folder as a skill where your agent supports skills), then ask, for example, “Create 50 AQA GCSE Physics flashcards on Waves” or “Create a Recall library deck with 40 AQA GCSE Physics Waves cards.” The agent should write the CSV, plus a manifest entry for a library deck, and run the validator; it must not pad an unsupported topic merely to reach the requested count. [Official OpenAI documentation](https://developers.openai.com/plugins/concepts/skills) describes the shared `SKILL.md` workflow format used by ChatGPT/Codex. No OpenAI or Claude API connection is required by Recall itself for deck generation.
+
 ## Build local release artifacts
 
 Run `npm ci` with Node 22.12 or later, then choose a command below. Packaging reads the current version from `package.json` and uses the existing `release-<version>` convention. These local build commands never commit, tag, push, create a GitHub release, publish or upload. Builder is always called with publishing disabled. Its first run may download free Electron/packaging tools into the normal local caches.
@@ -79,12 +88,12 @@ Architecture defaults to the machine's Node architecture. Append `-- --x64` or `
 Output is isolated by platform, architecture and a unique build directory:
 
 ```text
-release-1.2.0/
+release-1.3.0/
   windows/x64/build-<UTC-time>-<unique-id>/
-    Recall-Flashcards-1.2.0-win-x64-setup.exe
-    Recall-Flashcards-1.2.0-win-x64-portable.exe
-    Recall-Flashcards-1.2.0-win-x64-zip.zip
-    Recall-Flashcards-1.2.0-win-x64-msi.msi
+    Recall-Flashcards-1.3.0-win-x64-setup.exe
+    Recall-Flashcards-1.3.0-win-x64-portable.exe
+    Recall-Flashcards-1.3.0-win-x64-zip.zip
+    Recall-Flashcards-1.3.0-win-x64-msi.msi
     BUILD-NOTES.md
     .app/             (generated packaging input)
     win-unpacked/    (generated runnable application)
@@ -92,7 +101,7 @@ release-1.2.0/
   macos/arm64/build-<UTC-time>-<unique-id>/
 ```
 
-The flat, Git-ignored `release-1.2.0/github-upload/` folder is the staging area for verified artifacts from each host. The Linux tar archive is named `Recall-Flashcards-1.2.0-linux-x64-archive.tar.gz` there; Electron Builder's original output has a redundant `.tar.gz` in its filename. Merely placing files in the folder does not upload anything.
+The flat, Git-ignored `release-1.3.0/github-upload/` folder is the staging area for verified artifacts from each host. The Linux tar archive is named `Recall-Flashcards-1.3.0-linux-x64-archive.tar.gz` there; Electron Builder's original output has a redundant `.tar.gz` in its filename. Merely placing files in the folder does not upload anything.
 
 Each invocation prints its exact output path and writes a build note with completion status and artifact paths. A failed build retains its partial output for inspection. Repeated builds always create a fresh directory: there is no release-folder cleanup or overwrite of previous artifacts or user files. Directory junctions/symlinks are rejected. Existing `release/`, `release-1.0.*`, and their installers are preserved. Release folders remain Git-ignored.
 
@@ -106,7 +115,11 @@ To deliberately configure a cloud-enabled local release, supply `SUPABASE_URL` a
 
 ## Review scheduling
 
-Recall stores the next due time, last review time, successful repetitions, and lapses on every card. It also keeps a local review log with the result and time taken for each review. Older cards are migrated safely as new, immediately due cards. The small baseline scheduler is isolated in `scheduler.js`, so it can later be replaced with FSRS without changing the rest of the app.
+Home shows cards due today, new and learning cards, learned cards, reviews today, and your streak. Choose **Start Review** for all decks, a specific deck, or a topic present in deck metadata; **Deck cards → Start Review** starts that deck directly. A session shows the front first, then reveals the answer only when requested. Rate with **Again**, **Hard**, **Good**, or **Easy**; the buttons preview the next interval. Keyboard shortcuts are **Space** to reveal and **1–4** to rate. You can leave and resume a session without losing answered cards. The daily new-card limit defaults to **20** across all decks and can be changed on Home from 0 to 100.
+
+Scheduling uses [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) with FSRS 6 defaults, deterministic interval previews, 1-minute and 10-minute learning steps, and a 10-minute relearning step. Each user card stores `dueAt`, `lastReviewedAt`, `repetitions`, `lapses`, `schedulerVersion`, and an `fsrs` object containing FSRS state, stability, difficulty, learning step, and interval data. `reviewCount` and the local `reviewLog` remain in use; new review events also store the four-way rating and whether this was the card's first review. The saved `dailyReview` queue and `newCardLimit` are included in optional library sync. Dates are stored as UTC instants, while daily limits and streaks use the device's local calendar day.
+
+Existing due dates, card content, counts, and review history are preserved. Cards without FSRS memory start their FSRS history on their next review while keeping their prior due date. Built-in library files are never scheduled directly; only the user's copied cards gain review data. The older Study and typed-answer flows still work: **Mark correct** maps to FSRS Good and **Needs practice** maps to Again.
 
 ## Subject tags and colours
 
@@ -147,9 +160,11 @@ For a static Vercel-compatible build, run `npm run build:web` and serve only `di
 
 ### Optional AI answer evaluation
 
-In **Settings → Answer evaluation**, AI appeals are off by default. Typed study and Test Mode answers are always graded locally first using exact matching, accepted alternatives, and typo tolerance. A non-correct result then shows **Appeal with AI**; clicking it enables appeals and sends that one answer to the `evaluate-answer` Supabase Edge Function. Each later answer still needs its own click. No Groq request is made merely by submitting an answer. If cloud setup, sign-in, or the server function is missing, the reason appears beside the original local result. The Groq model defaults to `openai/gpt-oss-120b` and judges meaning, scientific key concepts, contradictions, and language-specific spelling. An accepted appeal counts as correct; a partial appeal earns fractional Test Mode and study-session credit but is scheduled as needs-practice rather than receiving a correct-answer interval; a rejected or unavailable appeal keeps the local grade. Multiple-choice/gender answers cannot be appealed. Each submitted answer can be appealed once, and the server permits ten AI reviews per signed-in user per hour per running function instance.
+In **Settings → Answer evaluation**, AI appeals are off by default. Typed study and Test Mode answers are always graded locally first using exact matching, accepted alternatives, and typo tolerance. A non-correct result then shows **Appeal with AI**; clicking it enables appeals and sends that one answer to the `evaluate-answer` Supabase Edge Function. Each later answer still needs its own click. No provider request is made merely by submitting an answer. If cloud setup, sign-in, or the server function is missing, the reason appears beside the original local result. The default is Groq `openai/gpt-oss-120b`; the selected provider judges meaning, scientific key concepts, contradictions, and language-specific spelling. An accepted appeal counts as correct; a partial appeal earns fractional Test Mode and study-session credit but is scheduled as needs-practice rather than receiving a correct-answer interval; a rejected or unavailable appeal keeps the local grade. Multiple-choice/gender answers cannot be appealed. Each submitted answer can be appealed once, and the server permits ten AI reviews per signed-in user per hour per running function instance.
 
-To enable it, deploy [`supabase/functions/evaluate-answer/index.ts`](supabase/functions/evaluate-answer/index.ts) to the **same Supabase project** used by the app (for example, `supabase functions deploy evaluate-answer --project-ref YOUR_PROJECT_REF`). In that project's Edge Function secrets, set `GROQ_API_KEY`; optionally set `GROQ_MODEL` (default `openai/gpt-oss-120b`). Do not put either value in `.env.local`, Vercel client-build variables, Git, or desktop packages. The function requires a signed-in user's JWT and uses only a public Supabase API key to verify the session. No service-role key or database schema change is needed. Nothing in this repository deploys the function or configures a live Groq key automatically; existing installers predate this change.
+To enable it, apply [`supabase/schema.sql`](supabase/schema.sql) to the **same Supabase project** used by the app, then deploy both [`evaluate-answer`](supabase/functions/evaluate-answer/index.ts) and [`admin-ai`](supabase/functions/admin-ai/index.ts) Edge Functions. The default selection is Groq `openai/gpt-oss-120b`. Add provider keys **only** in Supabase Edge Function secrets: `GROQ_API_KEY`, `NVIDIA_API_KEY`, `OPENAI_API_KEY`, and/or `GEMINI_API_KEY`. `GROQ_MODEL` is optional for a legacy installation with no settings row; it defaults to `openai/gpt-oss-120b` and must be an approved Groq model. Do not put any provider key in `.env.local`, Vercel build variables, Git, or desktop packages. Supabase supplies `SUPABASE_SERVICE_ROLE_KEY` privately to the Edge Functions; it reads the selected model and writes server-verified test status, and is never bundled or returned. Nothing in this repository deploys functions or configures live keys automatically.
+
+AI administrators are provisioned only through a trusted Supabase SQL editor or equivalent privileged migration: `insert into public.recall_ai_admins(user_id) values ('AUTH-USER-UUID');`. The UUID must be an existing authenticated user's ID. There is no email-based or frontend-only admin check. When that user signs in, **Settings → Admin AI providers** shows the global selection, approved models, each provider's key-configured flag, test status, and last successful test time. “Test connection” makes a small server-side request without flashcard or account data; credentials and provider response bodies are never shown. Approved models are Groq `openai/gpt-oss-120b`/`openai/gpt-oss-20b`, NVIDIA NIM `meta/llama-3.3-70b-instruct`/`meta/llama-3.1-8b-instruct`, OpenAI `gpt-4.1-mini`/`gpt-4o-mini`, and Gemini `gemini-3.5-flash`/`gemini-3.5-flash-lite`. The allowlist is enforced in both Edge Functions and by a database constraint. Normal users cannot read or change settings under RLS. A failed provider leaves the original local result in place with an AI-unavailable message. Edge rate limits are per running instance, not a durable global quota; enforce an upstream/project-wide budget separately for stronger cost control.
 
 The request contains only question, expected answer, typed answer, accepted alternatives, subject, language and fixed marking guidance. It omits account identity, notes, hints, deck contents, due dates and review history. Inputs are limited to 700 characters per answer; accepted alternatives are capped at ten and private-looking text is rejected before the model call. AI output is strictly validated and shown as text. Timeouts, malformed responses, missing configuration, sign-out, and rate limits leave the local result intact. The ten-per-hour server limit is **per running function instance**; without a shared durable counter, concurrent instances or cold starts can exceed that soft limit. Groq's own account limits still apply. Do not store secrets in card questions, answers, or accepted alternatives, since those fields can be sent when you appeal. Leave AI appeals off if that data should remain entirely local.
 
@@ -178,7 +193,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the app's full version history. It is maint
 
 ## Get the Windows release
 
-Download **Recall-Flashcards-1.2.0-win-x64-setup.exe** from the [GitHub Releases page](https://github.com/kiy-codes/recall-flashcards/releases). Install it, then launch Recall Flashcards from the Start menu or desktop. Cloud accounts are optional and require your own Supabase project configuration; the release works locally without it.
+Download **Recall-Flashcards-1.3.0-win-x64-setup.exe** from the [GitHub Releases page](https://github.com/kiy-codes/recall-flashcards/releases). Install it, then launch Recall Flashcards from the Start menu or desktop. Cloud accounts are optional and require your own Supabase project configuration; the release works locally without it.
 
 ## Very basic instructions
 
