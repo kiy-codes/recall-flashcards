@@ -49,7 +49,7 @@ app.whenReady().then(async () => {
         for (let i = 0; i < 100 && styleOf('#toast').backgroundColor !== 'rgb(36, 54, 95)'; i++) await wait(20);
         assert(styleOf('#toast').backgroundColor === 'rgb(36, 54, 95)', 'Dark toast is not using a readable themed surface: ' + styleOf('#toast').backgroundColor);
         assert(styleOf('#newSetBtn').backgroundColor === 'rgb(23, 34, 59)', 'Dark library actions are not themed');
-        assert(styleOf('.library-search').backgroundColor === 'rgb(23, 34, 59)', 'Dark library search is not themed');
+        assert(styleOf('.library-search').backgroundColor === 'rgb(17, 26, 49)', 'Dark library search is not themed');
         document.querySelector('#themeSelect').value = 'light';
         document.querySelector('#themeSelect').dispatchEvent(new Event('change', { bubbles: true }));
         assert(document.documentElement.dataset.theme === 'light', 'Light theme setting did not apply');
@@ -454,37 +454,39 @@ app.whenReady().then(async () => {
         window.RecallCloudClient = previousCloud; state.aiEnabled = previousAI; aiToggle.checked = previousAI; localStorage.setItem('recall-ai-enabled-v1', String(previousAI));
 
         click('[data-home-nav="library"]'); click('#browseCatalogBtn');
-        assert(!document.querySelector('#catalogLibrary').hidden && document.querySelectorAll('.catalog-card').length === 5, 'Built-in library did not open with all five decks');
+        assert(!document.querySelector('#catalogLibrary').hidden && document.querySelectorAll('.catalog-card').length === RecallCatalogData.entries.length, 'Built-in library did not open with all bundled decks');
         assert([...document.querySelectorAll('#catalogGrid .catalog-subject-group h2')].map(heading => heading.textContent).join('|') === 'Biology|Chemistry|Physics', 'Catalog decks were not grouped by subject');
         const chemistryGroup = [...document.querySelectorAll('#catalogGrid .catalog-subject-group')].find(group => group.querySelector('h2')?.textContent === 'Chemistry');
-        assert(chemistryGroup.querySelectorAll('.catalog-topic-group').length === 3 && chemistryGroup.querySelectorAll('.catalog-card').length === 3, 'Chemistry decks were not grouped by topic');
-        assert(!chemistryGroup.querySelector('.catalog-topic-group > h3') && chemistryGroup.querySelectorAll('.catalog-card h3').length === 3, 'Topic title was duplicated above a deck box');
-        const chemistryTopics = chemistryGroup.querySelectorAll('.catalog-topic-group');
+        const chemistryEntries = RecallCatalogData.entries.filter(entry => entry.subject === 'Chemistry');
+        assert(chemistryGroup.querySelectorAll('.catalog-topic-group').length === new Set(chemistryEntries.map(entry => entry.topic)).size && chemistryGroup.querySelectorAll('.catalog-card').length === chemistryEntries.length, 'Chemistry decks were not grouped by topic');
+        assert(!chemistryGroup.querySelector('.catalog-topic-group > h3') && chemistryGroup.querySelectorAll('.catalog-card h3').length === chemistryEntries.length, 'Topic title was duplicated above a deck box');
+        const chemistryTopics = chemistryGroup.querySelectorAll('.catalog-card');
         const firstTopic = chemistryTopics[0].getBoundingClientRect(); const secondTopic = chemistryTopics[1].getBoundingClientRect();
         assert(Math.abs(firstTopic.top - secondTopic.top) < 1 && secondTopic.left > firstTopic.left, 'Multiple topics in one subject were stacked instead of shown in a grid');
         document.querySelector('#catalogQualification').value = 'GCSE'; document.querySelector('#catalogQualification').dispatchEvent(new Event('change'));
         document.querySelector('#catalogBoard').value = 'AQA'; document.querySelector('#catalogBoard').dispatchEvent(new Event('change'));
-        document.querySelector('#catalogSubtopic').value = 'Properties of waves'; document.querySelector('#catalogSubtopic').dispatchEvent(new Event('change'));
+        const catalogFixture = RecallCatalogData.entries.find(entry => entry.id === 'gcse-aqa-physics-4611-transverse-longitudinal');
+        document.querySelector('#catalogSubtopic').value = catalogFixture.subtopic; document.querySelector('#catalogSubtopic').dispatchEvent(new Event('change'));
         document.querySelector('#catalogSearch').value = 'Waves'; document.querySelector('#catalogSearch').dispatchEvent(new Event('input'));
         assert(document.querySelectorAll('.catalog-card').length === 1, 'Catalog search and qualification/board filters failed');
         assert(document.querySelectorAll('#catalogGrid .catalog-subject-group').length === 1 && document.querySelector('#catalogGrid .catalog-subject-group h2').textContent === 'Physics', 'Filtering left unrelated subject groups visible');
         document.querySelector('#catalogSearch').value = 'no matching deck'; document.querySelector('#catalogSearch').dispatchEvent(new Event('input'));
         assert(!document.querySelector('#catalogGrid .catalog-subject-group') && document.querySelector('#catalogGrid .library-empty'), 'Empty catalog search left stale groups visible');
         document.querySelector('#catalogSearch').value = 'Waves'; document.querySelector('#catalogSearch').dispatchEvent(new Event('input'));
-        click('[data-catalog-id="gcse-aqa-physics-waves"]');
-        assert(!document.querySelector('#catalogPreview').hidden && document.querySelectorAll('#catalogPreviewCards article').length === 6, 'Catalog preview did not show six source cards');
+        click('[data-catalog-id="' + catalogFixture.id + '"]');
+        assert(!document.querySelector('#catalogPreview').hidden && document.querySelectorAll('#catalogPreviewCards article').length === Math.min(20, catalogFixture.cardCount), 'Catalog preview did not show source cards');
         const originalCatalogFront = window.RecallCatalogData.entries[0].cards[0].front;
         const deckCountBeforeCatalog = state.sets.length;
         click('#catalogAdd');
         const catalogCopy = state.sets.at(-1);
-        assert(state.sets.length === deckCountBeforeCatalog + 1 && catalogCopy.cards.length === 6 && state.currentView === 'deck', 'Catalog copy did not add a new editable deck');
+        assert(state.sets.length === deckCountBeforeCatalog + 1 && catalogCopy.cards.length === catalogFixture.cardCount && state.currentView === 'deck', 'Catalog copy did not add a new editable deck');
         assert(catalogCopy.cards.every(card => card.state === 'New' && card.reviewCount === 0) && document.querySelector('#catalogLibrary').hidden, 'Catalog copy retained study progress or left the catalog open');
         catalogCopy.cards[0].front = 'Personal edit';
         assert(window.RecallCatalogData.entries[0].cards[0].front === originalCatalogFront, 'Editing the copied deck changed the catalog source');
 
         const copyId = catalogCopy.id;
         click('#deckStartReviewBtn');
-        assert(state.currentView === 'review' && state.dailyReview.queue.length === 6, 'Deck review did not queue the copied library cards');
+        assert(state.currentView === 'review' && state.dailyReview.queue.length === catalogFixture.cardCount, 'Deck review did not queue the copied library cards');
         assert(document.querySelector('#dailyReviewAnswer').hidden && document.querySelector('#dailyRatingButtons').hidden, 'Daily review revealed the answer before the user chose to');
         click('#revealReviewBtn');
         assert(!document.querySelector('#dailyReviewAnswer').hidden && !document.querySelector('#dailyRatingButtons').hidden, 'Reveal did not show answer and rating intervals');
@@ -498,13 +500,13 @@ app.whenReady().then(async () => {
         load();
         startDailyReview({ deckId: copyId });
         assert(state.dailyReview.index === 1 && document.querySelector('#dailyReviewAnswer').hidden, 'Interrupted review did not resume safely with answer hidden');
-        for (const rating of ['Again', 'Hard', 'Easy', 'Good', 'Good']) {
+        for (const rating of ['Again', 'Hard', 'Easy', ...Array(catalogFixture.cardCount - 4).fill('Good')]) {
           click('#revealReviewBtn');
           click('[data-review-rating="' + rating + '"]');
         }
-        assert(state.dailyReview.index === 6 && !document.querySelector('#dailyReviewSummary').hidden, 'Completed daily review did not show a session summary');
-        assert(state.dailyReview.ratings.Again === 1 && state.dailyReview.ratings.Hard === 1 && state.dailyReview.ratings.Good === 3 && state.dailyReview.ratings.Easy === 1, 'Four-way rating counts were incorrect');
-        assert(document.querySelector('#dailyReviewSummary').textContent.includes('6 cards reviewed') && document.querySelector('#dailyReviewSummary').textContent.includes('Approximate recall'), 'Session summary omitted review count or recall');
+        assert(state.dailyReview.index === catalogFixture.cardCount && !document.querySelector('#dailyReviewSummary').hidden, 'Completed daily review did not show a session summary');
+        assert(state.dailyReview.ratings.Again === 1 && state.dailyReview.ratings.Hard === 1 && state.dailyReview.ratings.Good === catalogFixture.cardCount - 3 && state.dailyReview.ratings.Easy === 1, 'Four-way rating counts were incorrect');
+        assert(document.querySelector('#dailyReviewSummary').textContent.includes(catalogFixture.cardCount + ' cards reviewed') && document.querySelector('#dailyReviewSummary').textContent.includes('Approximate recall'), 'Session summary omitted review count or recall');
 
         const masteryDeck = normaliseDeck({ id: makeId(), name: 'Mastery checks', cards: [
           { front: 'Spaced recall', back: 'Seven days' }, { front: 'Easy recall', back: 'Seven days' },

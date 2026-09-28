@@ -8,7 +8,7 @@ async function main() {
   delete env.ELECTRON_RUN_AS_NODE;
   let resultCode = 0;
   try {
-    for (const file of ['smoke-test.js', 'sync-smoke-test.js']) {
+    for (const file of ['smoke-test.js', 'sync-smoke-test.js', 'admin-library-smoke-test.js']) {
       const result = spawnSync(require('electron'), [path.resolve(__dirname, '..', file)], { env, stdio: 'inherit', timeout: 120000, windowsHide: true });
       if (result.error) throw result.error;
       if (result.status !== 0) { resultCode = result.status || 1; break; }

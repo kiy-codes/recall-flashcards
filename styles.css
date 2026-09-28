@@ -530,6 +530,34 @@ html[data-theme="dark"] .account-dialog { background: var(--surface); color: var
 .admin-ai-dialog #adminAiContent label { display: grid; gap: 5px; min-width: 0; font-size: 12px; font-weight: 700; }
 .admin-ai-dialog #adminAiContent select { width: 100%; min-height: 38px; padding: 7px; border: 1px solid var(--line); border-radius: 5px; color: inherit; background: transparent; }
 .admin-ai-dialog #adminAiContent button { justify-self: start; }
+.admin-library-dialog { width: min(780px, calc(100vw - 24px)); }
+.admin-library-warning { padding: 12px; border-left: 3px solid var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); font-size: 13px; }
+.admin-library-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.admin-library-field { display: grid; gap: 7px; min-width: 0; font-size: 13px; font-weight: 700; }
+.admin-library-field input, .admin-library-field select, .admin-library-field textarea { width: 100%; min-height: 42px; margin: 0; padding: 9px; border: 1px solid var(--line); border-radius: 5px; color: inherit; background: transparent; font: inherit; }
+.admin-library-field textarea { min-height: 100px; resize: vertical; }
+.admin-library-form label:has(textarea), .admin-library-actions { grid-column: 1 / -1; }
+.admin-library-decks { display: grid; gap: 10px; max-height: 45vh; overflow: auto; }
+.admin-library-deck { display: grid; gap: 6px; width: 100%; padding: 14px; text-align: left; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; overflow-wrap: anywhere; }
+.admin-library-deck span { color: var(--muted); font-size: 12px; }
+.admin-library-details { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(0, 2fr); gap: 8px 15px; font-size: 13px; overflow-wrap: anywhere; }
+.admin-library-details dt { font-weight: 800; }.admin-library-details dd { margin: 0; white-space: pre-wrap; }
+.admin-library-cards { max-height: 45vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+.admin-library-cards article + article { border-top: 1px solid var(--line); margin-top: 15px; padding-top: 12px; }
+.admin-library-cards h4, .admin-library-cards p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-library-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+.admin-library-check { display: flex; gap: 12px; align-items: flex-start; margin: 18px 0; font-size: 13px; line-height: 1.5; }
+.admin-library-check input { width: 20px; height: 20px; flex: 0 0 auto; margin: 0; }
+.admin-library-dialog button:disabled, .admin-library-confirm button:disabled { opacity: .5; cursor: not-allowed; }
+.admin-library-dialog :focus-visible, .admin-library-confirm :focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.catalog-library #catalogRemoteStatus { max-width: 1100px; margin: 10px auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 560px) {
+  .admin-library-dialog, .admin-library-confirm { padding: 16px; max-height: calc(100dvh - 24px); }
+  .admin-library-form { grid-template-columns: minmax(0, 1fr); }
+  .admin-library-details { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .admin-library-details dd { margin-bottom: 10px; }
+  .admin-library-actions > button { width: 100%; white-space: normal; }
+}
 html[data-theme="dark"] .account-error { color: #ffb1b1; }
 @media (max-width: 1100px) {
   .topbar { gap: 6px; }

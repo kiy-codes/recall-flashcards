@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const Core = require('../catalog-core');
+const Core = require('../supabase/functions/_shared/catalog-core');
+const { createHash } = require('node:crypto');
 
 function readUtf8(file) {
   const stat = fs.statSync(file);
@@ -15,6 +16,7 @@ function loadCatalog(root = path.resolve(__dirname, '..')) {
   const ids = new Set(), files = new Set();
   return manifest.decks.map(raw => {
     const meta = Core.validateEntry(raw);
+    if (meta.id.startsWith('web-')) throw new Error('The web- catalogue ID namespace is reserved for remote publications.');
     if (ids.has(meta.id) || files.has(meta.file)) throw new Error('Duplicate flashcard library ID or file.');
     ids.add(meta.id); files.add(meta.file);
     const file = path.resolve(root, meta.file);
@@ -30,4 +32,9 @@ function buildCatalog(root, outfile) {
   fs.writeFileSync(outfile, `window.RecallCatalogData = Object.freeze(${JSON.stringify({ entries })});\n`);
   return entries;
 }
-module.exports = { loadCatalog, buildCatalog, readUtf8 };
+function buildDuplicateIndex(root) {
+  const index = loadCatalog(root).map(entry => ({ title: Core.normalizeText(entry.title).replace(/\s/g, ''),
+    contentHash: createHash('sha256').update(Core.contentKey(entry)).digest('hex') }));
+  fs.writeFileSync(path.join(root, 'supabase/functions/_shared/catalog-bundled.json'), JSON.stringify(index, null, 2) + '\n');
+}
+module.exports = { loadCatalog, buildCatalog, buildDuplicateIndex, readUtf8 };

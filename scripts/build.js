@@ -4,9 +4,9 @@ const { parseEnv } = require('node:util');
 const { createHash } = require('node:crypto');
 const esbuild = require('esbuild');
 const { validateConfig } = require('../sync-core');
-const { buildCatalog } = require('./catalog');
+const { buildCatalog, buildDuplicateIndex } = require('./catalog');
 const root = path.resolve(__dirname, '..');
-const WEB_FILES = ['index.html', 'styles.css', 'app.js', 'catalog-core.js', 'catalog-data.js', 'catalog-ui.js', 'test-utils.js', 'subject-utils.js', 'fsrs-vendor.js', 'scheduler.js', 'completion-utils.js', 'metadata-utils.js', 'ai-evaluator.js', 'sync-core.js', 'sync-service.js', 'share-core.js', 'share-service.js', 'account-ui.js', 'admin-ai.js', 'share-ui.js', 'cloud-client.js', 'web-offline.js', 'exampleText.txt'];
+const WEB_FILES = ['index.html', 'styles.css', 'app.js', 'catalog-core.js', 'catalog-data.js', 'catalog-service.js', 'catalog-ui.js', 'admin-library.js', 'test-utils.js', 'subject-utils.js', 'fsrs-vendor.js', 'scheduler.js', 'completion-utils.js', 'metadata-utils.js', 'ai-evaluator.js', 'sync-core.js', 'sync-service.js', 'share-core.js', 'share-service.js', 'account-ui.js', 'admin-ai.js', 'share-ui.js', 'cloud-client.js', 'web-offline.js', 'exampleText.txt'];
 
 function readConfig(env = process.env) {
   let local = {};
@@ -23,7 +23,9 @@ function readConfig(env = process.env) {
 async function build({ web = false, config = readConfig(), outfile = path.join(root, 'cloud-client.js') } = {}) {
   config = validateConfig(config.url, config.key);
   fs.copyFileSync(path.join(path.dirname(require.resolve('ts-fsrs')), 'index.umd.js'), path.join(path.dirname(outfile), 'fsrs-vendor.js'));
+  fs.copyFileSync(path.join(root, 'supabase/functions/_shared/catalog-core.js'), path.join(path.dirname(outfile), 'catalog-core.js'));
   buildCatalog(root, path.join(path.dirname(outfile), 'catalog-data.js'));
+  buildDuplicateIndex(root);
   await esbuild.build({
     absWorkingDir: root,
     entryPoints: ['cloud-client-entry.js'], outfile,

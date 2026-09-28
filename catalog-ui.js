@@ -3,8 +3,11 @@
   const page = document.querySelector('#catalogLibrary');
   const openButton = document.querySelector('#browseCatalogBtn');
   if (!page || !openButton) return;
-  const entries = window.RecallCatalogData?.entries;
-  const byId = new Map(Array.isArray(entries) ? entries.map(entry => [entry.id, entry]) : []);
+  const bundled = window.RecallCatalogData?.entries;
+  let entries = Array.isArray(bundled) ? [...bundled] : [];
+  let byId = new Map(entries.map(entry => [entry.id, entry]));
+  let loading = false;
+  const remoteStatus = page.querySelector('#catalogRemoteStatus');
   const search = page.querySelector('#catalogSearch');
   const grid = page.querySelector('#catalogGrid');
   const preview = page.querySelector('#catalogPreview');
@@ -13,11 +16,13 @@
   let selected = null;
   function fillFilters() {
     for (const [key, select] of Object.entries(fields)) {
+      const previous = select.value;
       select.replaceChildren();
       const all = document.createElement('option'); all.value = ''; all.textContent = `All ${key === 'examBoard' ? 'exam boards' : key === 'qualification' ? 'qualifications' : key === 'subject' ? 'subjects' : key === 'subtopic' ? 'subtopics' : 'topics'}`; select.append(all);
       for (const value of [...new Set(entries.map(entry => entry[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b))) {
         const option = document.createElement('option'); option.value = value; option.textContent = value; select.append(option);
       }
+      select.value = [...select.options].some(option => option.value === previous) ? previous : '';
     }
   }
   function matches(entry) {
@@ -85,12 +90,29 @@
     page.querySelector('#catalogBack').focus();
   }
   function backToResults() { selected = null; preview.hidden = true; grid.hidden = false; search.focus(); }
+  async function loadRemote() {
+    const factory = window.RecallCloudClient;
+    if (loading || !factory?.enabled) return;
+    loading = true;
+    remoteStatus.hidden = false; remoteStatus.textContent = 'Checking the online library…';
+    try {
+      const service = window.RecallCatalogService.createService(factory.create());
+      const rows = await service.load();
+      const merged = window.RecallCatalogCore.mergeCatalogs(bundled || [], rows);
+      entries = merged; byId = new Map(entries.map(entry => [entry.id, entry]));
+      fillFilters(); renderResults();
+      remoteStatus.textContent = ''; remoteStatus.hidden = true;
+    } catch {
+      remoteStatus.textContent = 'Online library unavailable. Bundled decks are still available.';
+    } finally { loading = false; }
+  }
   function close() { page.hidden = true; backToResults(); openButton.focus(); }
   openButton.addEventListener('click', () => {
     page.hidden = false;
     if (Array.isArray(entries)) { fillFilters(); renderResults(); }
     else status.textContent = 'The built-in library is unavailable in this build.';
     page.scrollTop = 0; search.focus();
+    loadRemote();
   });
   page.querySelector('#catalogClose').addEventListener('click', close);
   page.querySelector('#catalogBack').addEventListener('click', backToResults);
@@ -105,4 +127,5 @@
     finally { button.disabled = false; }
   });
   page.addEventListener('keydown', event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); if (!preview.hidden) backToResults(); else close(); } });
+  window.addEventListener('recall:catalog-published', loadRemote);
 })();

@@ -264,7 +264,7 @@
       <header class="full-library-head"><div><p class="eyebrow">Ready to study</p><h1>Flashcard library.</h1></div><button class="drawer-close" id="catalogClose" type="button" aria-label="Back to your decks">×</button></header>
       <p class="catalog-intro">Browse starter decks grouped by subject and topic. Preview before copying; your copy is yours to edit or delete.</p>
       <div class="catalog-tools"><label>Search<input id="catalogSearch" type="search" placeholder="Search decks and topics" autocomplete="off" /></label><label>Qualification<select id="catalogQualification"></select></label><label>Exam board<select id="catalogBoard"></select></label><label>Subject<select id="catalogSubject"></select></label><label>Topic<select id="catalogTopic"></select></label><label>Subtopic<select id="catalogSubtopic"></select></label></div>
-      <p id="catalogStatus" role="status" aria-live="polite"></p><div class="deck-grid catalog-grid" id="catalogGrid"></div>
+      <p id="catalogStatus" role="status" aria-live="polite"></p><p id="catalogRemoteStatus" role="status" aria-live="polite" hidden></p><div class="deck-grid catalog-grid" id="catalogGrid"></div>
       <section class="catalog-preview" id="catalogPreview" hidden aria-labelledby="catalogPreviewTitle"><div class="catalog-preview-head"><div><p class="eyebrow">Deck preview</p><h2 id="catalogPreviewTitle"></h2><p id="catalogPreviewMeta"></p><p id="catalogPreviewDescription"></p></div><button class="text-button" id="catalogBack" type="button">Back to results</button></div><div class="catalog-preview-cards" id="catalogPreviewCards"></div><button class="primary-button" id="catalogAdd" type="button">Copy to my decks</button><p id="catalogError" role="alert" hidden></p></section>
     </section>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -278,6 +278,7 @@
     <script src="completion-utils.js"></script>
     <script src="metadata-utils.js"></script>
     <script src="catalog-core.js"></script>
+    <script src="catalog-service.js"></script>
     <script src="catalog-data.js"></script>
     <script src="ai-evaluator.js"></script>
     <script src="sync-core.js"></script>
@@ -289,6 +290,7 @@
     <script src="share-service.js"></script>
     <script src="account-ui.js"></script>
     <script src="admin-ai.js"></script>
+    <script src="admin-library.js"></script>
     <script src="share-ui.js"></script>
     <script src="web-offline.js"></script>
   </body>

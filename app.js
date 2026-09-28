@@ -117,6 +117,8 @@ function save() {
 // Cloud code receives only a library adapter, never the mutable application state.
 // Storage is written before reload; a quota failure leaves the old library intact.
 window.RecallLibrary = {
+  // Publication selection is read-only and detached from application state.
+  catalogSources() { return JSON.parse(JSON.stringify(state.sets)); },
   read() {
     if (localStorage.getItem(STORAGE_KEY) !== lastSavedLibrary) throw new Error('Another tab changed this local library. Reload Recall before syncing.');
     save();

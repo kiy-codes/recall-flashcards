@@ -170,6 +170,12 @@ AI administrators are provisioned only through a trusted Supabase SQL editor or 
 
 The request contains only question, expected answer, typed answer, accepted alternatives, subject, language and fixed marking guidance. It omits account identity, notes, hints, deck contents, due dates and review history. Inputs are limited to 700 characters per answer; accepted alternatives are capped at ten and private-looking text is rejected before the model call. AI output is strictly validated and shown as text. Timeouts, malformed responses, missing configuration, sign-out, and rate limits leave the local result intact. The ten-per-hour server limit is **per running function instance**; without a shared durable counter, concurrent instances or cold starts can exceed that soft limit. Groq's own account limits still apply. Do not store secrets in card questions, answers, or accepted alternatives, since those fields can be sent when you appeal. Leave AI appeals off if that data should remain entirely local.
 
+### Admin web library
+
+Authorised `recall_ai_admins` members can use **Settings → Admin web library** to publish an immutable snapshot of a personal deck after metadata review, a full card preview and a separate typed-title/two-checkbox confirmation. Notes, hints and accepted answers become public; private IDs, study progress, schedules, folders and sync data are stripped. Browser clients cannot publish directly to the table. Server JWT checks, admin membership, validation and database-backed retries/duplicate protection are mandatory. Existing bundled decks remain available offline, and remote publications appear without rebuilding the site. The AI-provider admin panel is unchanged.
+
+See [manual migration, deployment and privacy instructions](supabase/ADMIN-LIBRARY.md). No build or test deploys anything or publishes real decks automatically.
+
 ### Security model and limits
 
 - The browser and Electron renderer contain only a Supabase project URL and **publishable/legacy anon key**. They never contain a service-role key. Optional cloud sync uses the signed-in user's JWT plus the owner-only RLS policies in `supabase/schema.sql`; the tables cannot be safely used until that SQL has been applied to the Supabase project. Check policies again in the dashboard after any manual schema change. A service-role key bypasses RLS and must never be put in this project, Vercel, a release, or a client-side environment variable.
