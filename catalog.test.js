@@ -6,7 +6,7 @@ const path = require('node:path');
 const Core = require('./catalog-core');
 const { loadCatalog, buildCatalog } = require('./scripts/catalog');
 const root = __dirname;
-const sample = loadCatalog(root)[0];
+const sample = loadCatalog(root).find(entry => entry.id === 'gcse-aqa-physics-4611-transverse-longitudinal');
 const header = Core.CSV_COLUMNS.join(',');
 const sampleRow = ['Q', 'A', 'Physics', 'science', '', '', 'waves', '', '', 'false', 'New', 'false', '0', '0', 'unknown', '', '', ''];
 const csv = rows => [header, ...rows].join('\r\n');
@@ -14,16 +14,16 @@ const meta = count => ({ id: 'gcse-aqa-physics-test', title: 'Test', description
 
 test('versioned sample library validates and uses the existing 18-column exporter schema', () => {
   const entries = loadCatalog(root);
-  assert.equal(entries.length, 5);
-  assert.equal(entries.reduce((sum, entry) => sum + entry.cards.length, 0), 162);
-  assert.deepEqual(entries.map(entry => entry.qualification).sort(), ['A Level', 'GCSE', 'International GCSE', 'International GCSE', 'International GCSE']);
+  assert.equal(entries.length, 10);
+  assert.equal(entries.reduce((sum, entry) => sum + entry.cards.length, 0), 317);
+  assert.deepEqual([...new Set(entries.map(entry => entry.qualification))].sort(), ['GCSE', 'International GCSE']);
   const chemistry = entries.filter(entry => entry.subject === 'Chemistry');
-  assert.deepEqual(chemistry.map(entry => entry.cardCount), [50, 50, 50]);
-  assert.ok(chemistry.every(entry => entry.examBoard === 'Edexcel' && entry.verified === false));
+  assert.deepEqual(chemistry.map(entry => entry.cardCount), [28, 22, 44, 71, 6]);
+  assert.ok(chemistry.every(entry => entry.examBoard === 'Edexcel' && entry.verified === true));
   const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
   assert.match(app, /const EXPORT_COLUMNS = RecallCatalogCore\.CSV_COLUMNS/);
   assert.equal(Core.CSV_COLUMNS.length, 18);
-  assert.equal(entries.every(entry => entry.verified === false), true);
+  assert.equal(entries.every(entry => entry.verified === true), true);
 });
 
 test('strict CSV accepts UTF-8, quoted commas and quotes, but rejects malformed rows', () => {
@@ -68,7 +68,7 @@ test('catalog build embeds only validated static deck content', () => {
     const outfile = path.join(directory, 'catalog-data.js');
     const entries = buildCatalog(root, outfile);
     const output = fs.readFileSync(outfile, 'utf8');
-    assert.equal(entries.length, 5);
+    assert.equal(entries.length, 10);
     assert.match(output, /RecallCatalogData/);
     assert.doesNotMatch(output, /GROQ_API_KEY|SUPABASE_SERVICE_ROLE_KEY|reviewHistory|password/);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }

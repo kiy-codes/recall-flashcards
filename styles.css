@@ -270,6 +270,7 @@ html[data-theme="dark"] .library-icon-button { color: #aeb9cf; }
 html[data-theme="dark"] .library-icon-button:hover { color: #dfe7ff; background: #263961; }
 html[data-theme="dark"] .library-search input { color: #edf1ff; }
 html[data-theme="dark"] .library-search input::placeholder { color: #8391ab; }
+html[data-theme="dark"] .library-search { background: #111a31; }
 html[data-theme="dark"] .session-menu { box-shadow: 0 16px 42px rgba(0,0,0,.35); }
 html[data-theme="dark"] .session-option { color: #edf1ff !important; }
 html[data-theme="dark"] .session-option:hover { background: #1d2d50; }
@@ -552,8 +553,7 @@ html[data-theme="dark"] .account-error { color: #ffb1b1; }
 .catalog-group-head { display: flex; grid-column: 1 / -1; align-items: baseline; gap: 12px; }
 .catalog-group-head h2 { margin: 0; color: var(--blue); font: 600 clamp(24px, 3vw, 32px) Fraunces, serif; }
 .catalog-group-head small { color: var(--muted); font-size: 11px; }
-.catalog-topic-group { min-width: 0; }
-.catalog-topic-grid { margin-top: 0; }
+.catalog-topic-group, .catalog-topic-grid { display: contents; }
 .catalog-card { gap: 12px; min-height: 195px; overflow-wrap: anywhere; }
 .catalog-card h3 { margin: 0; font-size: 16px; }
 .catalog-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
