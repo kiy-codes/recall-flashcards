@@ -215,9 +215,20 @@ app.whenReady().then(async () => {
         assert(normaliseCard({ front: 'Legacy', back: 'card' }).state === 'New', 'Existing cards do not migrate to the New state');
         state.shuffled = false; state.studyFilter = 'all'; buildQueue();
         click('#correctBtn'); await wait(300);
-        assert(one.state === 'Mastered', 'Learning card did not become Mastered after a second correct answer');
+        assert(one.state === 'Learning' && one.correctStreak === 2 && one.fsrs.scheduled_days < 7, 'Two immediate correct answers incorrectly mastered a card');
+        assert(state.currentSession.learned === 0, 'A short review interval incorrectly incremented learned activity');
+        one.lastReviewedAt = one.fsrs.last_review = new Date(Date.now() - 2 * 86400000).toISOString();
+        one.dueAt = one.fsrs.due = new Date(Date.now() - 1000).toISOString();
+        const beforeMastery = structuredClone(one);
+        buildQueue(); click('#correctBtn'); await wait(300);
+        assert(one.state === 'Mastered' && one.fsrs.scheduled_days >= 7 && state.currentSession.learned === 1, 'A spaced correct answer did not earn mastery at a seven-day interval');
+        click('#undoBtn');
+        assert(JSON.stringify(one) === JSON.stringify(beforeMastery) && state.currentSession.learned === 0, 'Undo did not restore the card and mastery activity');
+        click('#correctBtn'); await wait(300);
+        const masteredMemory = structuredClone(one.fsrs);
         buildQueue(); click('#retryBtn'); await wait(300);
         assert(one.state === 'Learning' && one.missed && one.correctStreak === 0, 'Incorrect answer did not return card to Learning and mark it missed');
+        assert(one.fsrs.reps === masteredMemory.reps + 1 && one.fsrs.lapses === masteredMemory.lapses + 1 && one.fsrs.stability > 0, 'A mastery lapse reset FSRS memory');
         state.studyFilter = 'missed'; buildQueue();
         assert(state.queue.length === 1 && state.queue[0].id === one.id, 'Missed-card study filter did not limit the session');
         click('#flagBtn'); assert(one.flagged, 'Flagging a card failed');
@@ -494,6 +505,46 @@ app.whenReady().then(async () => {
         assert(state.dailyReview.index === 6 && !document.querySelector('#dailyReviewSummary').hidden, 'Completed daily review did not show a session summary');
         assert(state.dailyReview.ratings.Again === 1 && state.dailyReview.ratings.Hard === 1 && state.dailyReview.ratings.Good === 3 && state.dailyReview.ratings.Easy === 1, 'Four-way rating counts were incorrect');
         assert(document.querySelector('#dailyReviewSummary').textContent.includes('6 cards reviewed') && document.querySelector('#dailyReviewSummary').textContent.includes('Approximate recall'), 'Session summary omitted review count or recall');
+
+        const masteryDeck = normaliseDeck({ id: makeId(), name: 'Mastery checks', cards: [
+          { front: 'Spaced recall', back: 'Seven days' }, { front: 'Easy recall', back: 'Seven days' },
+        ] });
+        state.sets.push(masteryDeck);
+        const [spacedCard, easyCard] = masteryDeck.cards;
+        const rateMasteryCard = (card, rating) => {
+          card.dueAt = card.fsrs.due = new Date(Date.now() - 1000).toISOString();
+          startDailyReview({ deckId: masteryDeck.id });
+          assert(currentDailyItem().card.id === card.id, 'Mastery check queued the wrong card');
+          click('#revealReviewBtn'); click('[data-review-rating="' + rating + '"]');
+        };
+        // Control queue order without changing the real FSRS rating calculations.
+        state.dailyReview = { id: makeId(), scope: { deckId: masteryDeck.id }, queue: masteryDeck.cards.map(card => ({ deckId: masteryDeck.id, cardId: card.id })), index: 0, timeSpentMs: 0, ratings: { Again: 0, Hard: 0, Good: 0, Easy: 0 } };
+        startDailyReview({ deckId: masteryDeck.id });
+        click('#revealReviewBtn'); click('[data-review-rating="Good"]');
+        assert(spacedCard.state === 'Learning' && spacedCard.fsrs.scheduled_days < 7, 'Daily first Good rating incorrectly mastered the card');
+        click('#revealReviewBtn'); click('[data-review-rating="Easy"]');
+        assert(easyCard.state === 'Mastered' && easyCard.fsrs.scheduled_days >= 7, 'Daily Easy rating did not award a qualifying mastery interval');
+        rateMasteryCard(spacedCard, 'Good');
+        assert(spacedCard.fsrs.state === 2 && spacedCard.state === 'Learning', 'Daily Review confused FSRS Review state with mastery');
+        spacedCard.lastReviewedAt = spacedCard.fsrs.last_review = new Date(Date.now() - 2 * 86400000).toISOString();
+        rateMasteryCard(spacedCard, 'Good');
+        assert(spacedCard.state === 'Mastered' && spacedCard.fsrs.scheduled_days >= 7, 'Daily spaced review did not earn mastery');
+        const beforeDailyLapse = structuredClone(spacedCard.fsrs);
+        rateMasteryCard(spacedCard, 'Again');
+        assert(spacedCard.state === 'Learning' && spacedCard.missed && spacedCard.correctStreak === 0, 'Daily Again rating did not demote mastery');
+        assert(spacedCard.fsrs.reps === beforeDailyLapse.reps + 1 && spacedCard.fsrs.lapses === beforeDailyLapse.lapses + 1 && spacedCard.fsrs.stability > 0, 'Daily lapse reset accumulated FSRS memory');
+        for (let i = 0; i < 10 && spacedCard.state !== 'Mastered'; i += 1) {
+          spacedCard.lastReviewedAt = spacedCard.fsrs.last_review = new Date(Date.now() - Math.max(1, spacedCard.fsrs.scheduled_days) * 86400000).toISOString();
+          rateMasteryCard(spacedCard, 'Good');
+        }
+        assert(spacedCard.state === 'Mastered' && !spacedCard.missed && spacedCard.fsrs.lapses === beforeDailyLapse.lapses + 1, 'Daily successful reviews did not recover mastery while retaining lapse history');
+        spacedCard.fsrs.scheduled_days = 6;
+        easyCard.fsrs.scheduled_days = 7;
+        const savedSpacedCard = structuredClone(spacedCard);
+        save(); load();
+        const restoredMastery = state.sets.find(deck => deck.id === masteryDeck.id);
+        assert(restoredMastery.cards[0].state === 'Learning' && restoredMastery.cards[1].state === 'Mastered', 'Loading did not reevaluate existing mastery at the seven-day boundary');
+        assert(JSON.stringify(restoredMastery.cards[0].fsrs) === JSON.stringify(savedSpacedCard.fsrs) && restoredMastery.cards[0].reviewCount === savedSpacedCard.reviewCount, 'Loading reset existing scheduling or review counts');
 
         return 'All automated feature checks passed.';
       })();

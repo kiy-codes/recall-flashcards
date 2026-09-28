@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { getNextReview, previewRatings, isDue, dueToday, isNew, scheduleCard, createReviewEvent, migrateCard, buildDailyQueue, progress, streak, newCardsReviewedToday, localDayKey, nextLocalDayStart, SCHEDULER_VERSION } = require('./scheduler');
+const { getNextReview, previewRatings, isDue, dueToday, isNew, isMastered, scheduleCard, createReviewEvent, migrateCard, buildDailyQueue, progress, streak, newCardsReviewedToday, localDayKey, nextLocalDayStart, SCHEDULER_VERSION, MASTERY_INTERVAL_DAYS } = require('./scheduler');
 const at = new Date('2026-01-01T12:00:00.000Z');
 test('new cards are immediately due', () => { assert.equal(isDue({}, at), true); assert.equal(isDue(migrateCard({}), at), true); });
 test('first FSRS review previews all four ratings before choosing one', () => {
@@ -32,13 +32,61 @@ test('subsequent reviews use FSRS memory and preserve due calculations', () => {
   assert(second.fsrs.stability > 0 && second.fsrs.difficulty > 0);
   assert.equal(isDue(second, secondAt), false);
 });
-test('old cards migrate without losing existing data and remain immediately due', () => { const migrated = migrateCard({ id: 'old', state: 'Mastered', reviewCount: 4 }); assert.equal(migrated.id, 'old'); assert.equal(migrated.state, 'Mastered'); assert.equal(migrated.schedulerVersion, SCHEDULER_VERSION); assert.equal(isDue(migrated, at), true); });
+test('mastery uses a scheduled interval of at least seven days, not review counts or due dates', () => {
+  assert.equal(MASTERY_INTERVAL_DAYS, 7);
+  for (const scheduled_days of [0, 2, 6, 6.99, undefined, NaN, Infinity, '7']) {
+    assert.equal(isMastered({ state: 'Mastered', correctStreak: 50, dueAt: '2027-01-01T12:00:00Z', fsrs: { scheduled_days } }), false);
+  }
+  assert.equal(isMastered({ fsrs: { scheduled_days: 7 }, dueAt: '2025-12-01T12:00:00Z' }), true);
+  assert.equal(isMastered({ fsrs: { scheduled_days: 14 } }), true);
+  assert.equal(isMastered({}), false);
+});
+test('two successful Good reviews do not qualify for mastery but a later spaced review does', () => {
+  const card = migrateCard({ state: 'New', reviewCount: 0 });
+  scheduleCard(card, 'Good', at);
+  assert.equal(isMastered(card), false);
+  scheduleCard(card, 'Good', new Date(card.dueAt));
+  assert.equal(card.fsrs.state, 2);
+  assert.equal(isMastered(card), false);
+  scheduleCard(card, 'Good', new Date(card.dueAt));
+  assert.equal(isMastered(card), true);
+});
+test('Easy can qualify earlier and a lapse preserves FSRS memory for recovery', () => {
+  const card = migrateCard({ state: 'New', reviewCount: 0 });
+  scheduleCard(card, 'Easy', at);
+  assert.equal(isMastered(card), true);
+  const mastered = structuredClone(card.fsrs);
+  scheduleCard(card, 'Again', new Date(card.dueAt));
+  assert.equal(isMastered(card), false);
+  assert.equal(card.fsrs.reps, mastered.reps + 1);
+  assert.equal(card.fsrs.lapses, mastered.lapses + 1);
+  assert(card.fsrs.stability > 0 && card.fsrs.difficulty > 0);
+  for (let i = 0; i < 10 && !isMastered(card); i += 1) scheduleCard(card, 'Good', new Date(card.dueAt));
+  assert.equal(isMastered(card), true);
+  assert.equal(card.fsrs.lapses, mastered.lapses + 1);
+  assert(card.fsrs.reps > mastered.reps + 1);
+});
+test('old Mastered cards without a qualifying interval migrate to Learning and remain due', () => { const migrated = migrateCard({ id: 'old', state: 'Mastered', reviewCount: 4 }); assert.equal(migrated.id, 'old'); assert.equal(migrated.state, 'Learning'); assert.equal(migrated.reviewCount, 4); assert.equal(migrated.schedulerVersion, SCHEDULER_VERSION); assert.equal(isDue(migrated, at), true); });
+test('migration reevaluates mastery without resetting scheduling, content, or counters', () => {
+  const scheduled = getNextReview({}, 'Easy', at);
+  for (const scheduled_days of [6, 7, 14]) {
+    const original = { ...scheduled, id: 'saved', front: 'Question', back: 'Answer', state: 'Mastered', reviewCount: 12, correctStreak: 5, fsrs: { ...scheduled.fsrs, scheduled_days } };
+    const before = structuredClone(original);
+    const migrated = migrateCard(JSON.parse(JSON.stringify(original)));
+    assert.deepEqual(migrated, { ...before, state: scheduled_days >= 7 ? 'Mastered' : 'Learning' });
+    assert.deepEqual(original, before);
+    assert.deepEqual(migrateCard(migrated), migrated);
+  }
+  assert.equal(migrateCard({ state: 'New', reviewCount: 0 }).state, 'New');
+  assert.equal(migrateCard({ ...scheduled, state: 'Learning' }).state, 'Learning');
+});
 test('migration preserves prior baseline due dates and seeds FSRS safely', () => {
   const dueAt = '2026-01-05T12:00:00.000Z';
   const card = migrateCard({ id: 'legacy', state: 'Mastered', reviewCount: 5, dueAt, lastReviewedAt: at.toISOString(), repetitions: 3, lapses: 1, schedulerVersion: 'baseline-v1' });
   assert.equal(card.dueAt, dueAt);
   assert.equal(card.reviewCount, 5);
   assert.equal(card.fsrs.state, 0);
+  assert.equal(card.state, 'Learning');
   assert.equal(isNew(card), false);
   assert(new Date(getNextReview(card, 'Good', new Date(dueAt)).dueAt) > new Date(dueAt));
 });
@@ -74,8 +122,17 @@ test('future learning steps wait until due and reviewed cards remain separate fr
   assert.equal(buildDailyQueue([{ id: 'deck', cards: [card] }], [], 20, at).length, 0);
   assert.equal(buildDailyQueue([{ id: 'deck', cards: [card] }], [], 20, new Date('2026-01-01T12:10:00Z')).length, 1);
 });
+test('Review cards below mastery keep normal due-today queue behavior', () => {
+  const card = migrateCard({ id: 'not-mastered', state: 'Mastered', reviewCount: 2, dueAt: '2026-01-01T15:00:00Z', fsrs: { state: 2, scheduled_days: 2 } });
+  assert.equal(card.state, 'Learning');
+  assert.equal(isDue(card, at), false);
+  assert.equal(dueToday(card, at), true);
+  assert.deepEqual(buildDailyQueue([{ id: 'deck', cards: [card] }], [], 20, at), [{ deckId: 'deck', cardId: card.id }]);
+  assert.equal(progress([{ id: 'deck', cards: [card] }], [], at).learned, 0);
+  assert.equal(progress([{ id: 'deck', cards: [card] }], [], at).learning, 1);
+});
 test('progress and streak count completed reviews by local calendar day', () => {
-  const card = migrateCard({ id: 'x', state: 'Mastered', reviewCount: 3, dueAt: at.toISOString() });
+  const card = migrateCard({ id: 'x', state: 'Mastered', reviewCount: 3, dueAt: at.toISOString(), fsrs: { state: 2, scheduled_days: 7 } });
   const sets = [{ id: 'deck', cards: [card, migrateCard({ id: 'new', state: 'New', reviewCount: 0 })] }];
   const yesterday = new Date(at); yesterday.setDate(yesterday.getDate() - 1);
   const log = [createReviewEvent(card, 'Good', yesterday), createReviewEvent(card, 'Hard', at)];

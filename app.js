@@ -613,12 +613,11 @@ function studyStreaks() {
 }
 function applyCardReview(card, result) {
   const before = { state: card.state, missed: card.missed, correctStreak: card.correctStreak, reviewCount: card.reviewCount };
-  card.reviewCount += 1; let learned = false;
-  if (result === 'correct') {
-    if (card.state === 'New') card.state = 'Learning';
-    card.correctStreak += 1; card.missed = false;
-    if (card.state === 'Learning' && card.correctStreak >= 2) { card.state = 'Mastered'; learned = before.state !== 'Mastered'; }
-  } else { card.state = 'Learning'; card.correctStreak = 0; card.missed = true; }
+  card.reviewCount += 1;
+  card.missed = result === 'retry' || result === 'Again';
+  card.correctStreak = card.missed ? 0 : card.correctStreak + 1;
+  card.state = !card.missed && RecallScheduler.isMastered(card) ? 'Mastered' : 'Learning';
+  const learned = before.state !== 'Mastered' && card.state === 'Mastered';
   return { before, learned };
 }
 function recordActivity(card, learned) {
@@ -1261,11 +1260,7 @@ function rateDailyCard(rating) {
   let addedEvent = false;
   try {
     RecallScheduler.scheduleCard(card, rating, reviewedAt);
-    card.reviewCount += 1;
-    card.correctStreak = rating === 'Again' ? 0 : card.correctStreak + 1;
-    card.missed = rating === 'Again';
-    card.state = card.fsrs.state === 2 ? 'Mastered' : 'Learning';
-    const learned = beforeCard.state !== 'Mastered' && card.state === 'Mastered';
+    const { learned } = applyCardReview(card, rating);
     state.reviewLog.push(RecallScheduler.createReviewEvent(card, rating, reviewedAt, responseTimeMs, deck.id, wasNew));
     addedEvent = true;
     recordActivity(card, learned);

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.1 - Meaningful mastery (2026-09-28)
+
+- Cards become Mastered when a successful review earns an FSRS scheduled interval of at least seven days, consistently in regular study and Daily Review.
+- Missed cards return to Learning while retaining their scheduling history; later successful reviews can restore mastery.
+- Existing Mastered cards are reevaluated when loaded, preserving their due dates, content, review counts, and scheduling history.
+- Kept normal due-today queue behavior for FSRS Review cards that are still working toward mastery, and added promotion, recovery, migration, and undo checks.
+- Improved Library search spacing and input padding.
+- Added a project-level installations folder for local copies of release packages, with binaries distributed through GitHub Releases.
+
 ## 1.3.0 - Daily review, AI management, and built-in decks (2026-09-27)
 
 - Added FSRS-based daily review sessions with Again/Hard/Good/Easy ratings, due and new-card limits, interval previews, progress and streaks.

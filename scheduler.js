@@ -9,6 +9,7 @@
   const MINUTE = 60 * 1000;
   const DAY = 24 * 60 * MINUTE;
   const DEFAULT_NEW_LIMIT = 20;
+  const MASTERY_INTERVAL_DAYS = 7;
   const RATINGS = ['Again', 'Hard', 'Good', 'Easy'];
   const scheduler = FSRS.fsrs({ enable_fuzz: false, enable_short_term: true, learning_steps: ['1m', '10m'], relearning_steps: ['10m'] });
   const asDate = value => value instanceof Date ? value : new Date(value);
@@ -21,6 +22,7 @@
   const localDayStart = value => { const date = asDate(value); return new Date(date.getFullYear(), date.getMonth(), date.getDate()); };
   const nextLocalDayStart = value => { const date = localDayStart(value); date.setDate(date.getDate() + 1); return date; };
   const isNew = card => !card?.lastReviewedAt && nonnegative(card?.reviewCount) === 0 && (card?.state === 'New' || !card?.state);
+  const isMastered = card => nonnegative(card?.fsrs?.scheduled_days) >= MASTERY_INTERVAL_DAYS;
 
   function fsrsCard(card = {}) {
     const stored = card.fsrs && typeof card.fsrs === 'object' ? card.fsrs : {};
@@ -43,7 +45,11 @@
       schedulerVersion: card.schedulerVersion || SCHEDULER_VERSION, fsrs,
     };
   }
-  const migrateCard = card => ({ ...card, ...schedulingDefaults(card) });
+  function migrateCard(card) {
+    const migrated = { ...card, ...schedulingDefaults(card) };
+    if (migrated.state === 'Mastered' && !isMastered(migrated)) migrated.state = 'Learning';
+    return migrated;
+  }
   const isDue = (card, now = new Date()) => !validDate(card?.dueAt) || asDate(card.dueAt).getTime() <= asDate(now).getTime();
   const dueToday = (card, now = new Date()) => !isNew(card) && (!validDate(card?.dueAt) || asDate(card.dueAt).getTime() < nextLocalDayStart(now).getTime());
   function ratingValue(rating) {
@@ -100,7 +106,8 @@
         const due = validDate(card.dueAt) ? new Date(card.dueAt).getTime() : 0;
         if (!fresh && due >= tomorrow) continue;
         if (fresh && !remainingNew) continue;
-        const learning = card.fsrs?.state === 1 || card.fsrs?.state === 3 || card.state === 'Learning';
+        // A Review card can still be Learning toward mastery; only FSRS steps wait until due.
+        const learning = card.fsrs?.state === 1 || card.fsrs?.state === 3 || (!card.fsrs?.state && card.state === 'Learning');
         if (learning && due > at.getTime()) continue;
         const priority = fresh ? 3 : due < todayStart ? 0 : learning ? 2 : 1;
         entries.push({ deckId: deck.id, cardId: card.id, priority, due });
@@ -126,7 +133,7 @@
     while (days.has(localDayKey(cursor))) { current += 1; cursor.setDate(cursor.getDate() - 1); }
     return current;
   }
-  return { SCHEDULER_VERSION, DEFAULT_NEW_LIMIT, RATINGS, localDayKey, localDayStart, nextLocalDayStart,
-    isNew, dueToday, schedulingDefaults, getNextReview, previewRatings, formatInterval, isDue, scheduleCard,
+  return { SCHEDULER_VERSION, DEFAULT_NEW_LIMIT, MASTERY_INTERVAL_DAYS, RATINGS, localDayKey, localDayStart, nextLocalDayStart,
+    isNew, isMastered, dueToday, schedulingDefaults, getNextReview, previewRatings, formatInterval, isDue, scheduleCard,
     createReviewEvent, migrateCard, newCardsReviewedToday, buildDailyQueue, progress, streak };
 });

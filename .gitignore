@@ -6,6 +6,7 @@ mobile/node_modules/
 release/
 release-*/
 /installers/
+/installations/*/
 
 # Private pre-public-release installers stay local; retain only their notes.
 archive/internal-development-builds/*

@@ -1,6 +1,6 @@
 # Recall Flashcards
 
-**v1.3.0 — Daily review, AI management, and built-in decks**
+**v1.3.1 — Meaningful mastery**
 
 Recall is a calm, local-first flashcard app for desktop and web. It is built with Electron and keeps decks, folders, cards, learning progress, session history, tests, and preferences on the device running the app.
 
@@ -117,6 +117,8 @@ To deliberately configure a cloud-enabled local release, supply `SUPABASE_URL` a
 
 Home shows cards due today, new and learning cards, learned cards, reviews today, and your streak. Choose **Start Review** for all decks, a specific deck, or a topic present in deck metadata; **Deck cards → Start Review** starts that deck directly. A session shows the front first, then reveals the answer only when requested. Rate with **Again**, **Hard**, **Good**, or **Easy**; the buttons preview the next interval. Keyboard shortcuts are **Space** to reveal and **1–4** to rate. You can leave and resume a session without losing answered cards. The daily new-card limit defaults to **20** across all decks and can be changed on Home from 0 to 100.
 
+In both regular study and Daily Review, a card becomes **Mastered** when a successful review earns a scheduled interval of at least **7 days**. A missed answer returns it to **Learning**, preserving its scheduling history so later successful reviews can restore mastery. Existing Mastered cards are reevaluated when loaded; cards without a stored interval of at least 7 days return to Learning without resetting their review history or due dates.
+
 Scheduling uses [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) with FSRS 6 defaults, deterministic interval previews, 1-minute and 10-minute learning steps, and a 10-minute relearning step. Each user card stores `dueAt`, `lastReviewedAt`, `repetitions`, `lapses`, `schedulerVersion`, and an `fsrs` object containing FSRS state, stability, difficulty, learning step, and interval data. `reviewCount` and the local `reviewLog` remain in use; new review events also store the four-way rating and whether this was the card's first review. The saved `dailyReview` queue and `newCardLimit` are included in optional library sync. Dates are stored as UTC instants, while daily limits and streaks use the device's local calendar day.
 
 Existing due dates, card content, counts, and review history are preserved. Cards without FSRS memory start their FSRS history on their next review while keeping their prior due date. Built-in library files are never scheduled directly; only the user's copied cards gain review data. The older Study and typed-answer flows still work: **Mark correct** maps to FSRS Good and **Needs practice** maps to Again.
@@ -193,7 +195,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the app's full version history. It is maint
 
 ## Get the Windows release
 
-Download **Recall-Flashcards-1.3.0-win-x64-setup.exe** from the [GitHub Releases page](https://github.com/kiy-codes/recall-flashcards/releases). Install it, then launch Recall Flashcards from the Start menu or desktop. Cloud accounts are optional and require your own Supabase project configuration; the release works locally without it.
+Download **Recall-Flashcards-1.3.1-win-x64-setup.exe** from the [GitHub Releases page](https://github.com/kiy-codes/recall-flashcards/releases). Install it, then launch Recall Flashcards from the Start menu or desktop. Cloud accounts are optional and require your own Supabase project configuration; the release works locally without it.
+
+Local copies of published packages are collected under `installations/<version>/`, alongside release notes and `SHA256SUMS.txt`. The installations folder's [README](installations/README.md) is tracked in Git; the versioned binary folders remain local, and packages are uploaded as GitHub Release assets.
 
 ## Very basic instructions
 
