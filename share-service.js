@@ -15,8 +15,9 @@
       if (!data?.user?.id) throw new Error('Sign in to create or manage deck links.');
       return data.user.id;
     }
-    async function create(deck, days = 30) {
-      if (![7, 30].includes(days)) throw new Error('Choose a supported link lifetime.');
+    async function create(deck, days) {
+      // Expiry is a required choice with no default; links last at most a week.
+      if (![1, 7].includes(days)) throw new Error('Choose when this link expires.');
       const owner = await user();
       const snapshot = Core.snapshotDeck(deck);
       const token = Core.newToken(cryptoApi);

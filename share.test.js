@@ -66,6 +66,8 @@ test('create, preview, list and revoke use owner-scoped requests', async () => {
     },
   };
   const service = Service.createService(client, webcrypto);
+  for (const bad of [undefined, 0, 30, '7']) await assert.rejects(service.create(source(), bad), /Choose when this link expires/);
+  assert.equal(rows.length, 0);
   const created = await service.create(source(), 7);
   assert.equal(created.deck_id, 'owner-deck');
   assert.equal(rows[0].owner_id, owner);
@@ -74,10 +76,25 @@ test('create, preview, list and revoke use owner-scoped requests', async () => {
   assert.equal((await service.list('owner-deck')).length, 1);
   assert.equal((await service.preview(created.token)).deck.cards[0].front, 'Cell');
   currentUser = null;
-  await assert.rejects(service.create(source()), /Sign in/);
+  await assert.rejects(service.create(source(), 7), /Sign in/);
   currentUser = '22222222-2222-4222-8222-222222222222';
   await assert.rejects(service.revoke(created.id), /does not belong/);
   currentUser = owner;
   await service.revoke(created.id);
   await assert.rejects(service.preview(created.token), /invalid, expired, revoked, or deleted/);
+});
+
+test('share snapshot contains only the allowlisted fields and none of the private ones', () => {
+  const deck = source();
+  Object.assign(deck, { reviewLog: [{ cardId: 'old-card', timestamp: '2026-01-01' }], dailyReview: { queue: ['old-card'] }, folderId: 'f1' });
+  Object.assign(deck.cards[0], { dueAt: '2027-01-01T00:00:00.000Z', lastReviewedAt: '2026-01-01', fsrs: { stability: 3 }, repetitions: 4, lapses: 1, flagged: true, correctStreak: 3, schedulerVersion: 'fsrs-6' });
+  const snapshot = Core.snapshotDeck(deck);
+  assert.deepEqual(Object.keys(snapshot).sort(), ['backLabel', 'cards', 'domain', 'frontLabel', 'language', 'name', 'subject', 'tags']);
+  assert.deepEqual(Object.keys(snapshot.cards[0]).sort(), ['acceptedAnswers', 'back', 'front', 'wordInfo']);
+  assert.deepEqual(Object.keys(snapshot.cards[0].wordInfo).sort(), ['gender', 'originalMarker', 'partOfSpeech']);
+  const encoded = JSON.stringify(snapshot);
+  for (const secret of ['Private note', 'Private hint', 'Private note', '2027-01-01', 'dueAt', 'fsrs', 'reviewLog', 'lastReviewedAt', 'review', 'notes', 'hint', 'private@example.com']) assert.equal(encoded.includes(secret), false, secret);
+  // Anything a hostile server adds to a snapshot is dropped, not copied into the library.
+  const copied = Core.copyDeck({ ...snapshot, cards: [{ ...snapshot.cards[0], notes: 'x', hint: 'y', dueAt: '2030-01-01' }] }, () => 'id');
+  assert.equal(copied.cards[0].notes, ''); assert.equal(copied.cards[0].hint, ''); assert.equal('dueAt' in copied.cards[0], false);
 });
