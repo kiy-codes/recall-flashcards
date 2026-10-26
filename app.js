@@ -65,7 +65,7 @@ elements.shareDeckSummary = $('#shareDeckSummary');
 elements.tagFilterOptions = $('#tagFilterOptions');
 elements.tagFilterSummary = $('#tagFilterSummary');
 elements.settingsBtn = $('#settingsBtn'); elements.settingsMenu = $('#settingsMenu'); elements.themeSelect = $('#themeSelect'); elements.keybindFlip = $('#keybindFlip'); elements.keybindRetry = $('#keybindRetry'); elements.keybindCorrect = $('#keybindCorrect'); elements.keybindUndo = $('#keybindUndo'); elements.resetKeybinds = $('#resetKeybindsBtn');
-elements.aiToggle = $('#aiEvaluationToggle'); elements.aiToggle.checked = state.aiEnabled;
+elements.aiToggle = $('#aiEvaluationToggle'); elements.aiToggle.checked = state.aiEnabled; const APPEALS_AVAILABLE = typeof RecallAI !== 'undefined'; const ANSWER_MAX_LENGTH = 700; if (!APPEALS_AVAILABLE) { const row = elements.aiToggle.closest('label'); [row.previousElementSibling, row, row.nextElementSibling].forEach(node => { if (node) node.hidden = true; }); }
 const makeId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const FOLDER_COLORS = ['#2447c2', '#bc5b55', '#3c9a88', '#a56b1d', '#7955ad', '#437cba'];
 const safeFolderColor = (value, fallback = '#a0a6b4') => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
@@ -1581,7 +1581,7 @@ render = function () {
     elements.typedFeedback.replaceChildren(document.createTextNode(`Local result: ${localLabel} — expected: ${result.expected || ''}`));
     if (!result.accepted) { const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.dataset.acceptAlternative = ''; button.textContent = 'Accept as alternative'; elements.typedFeedback.append(' ', button); }
     elements.typedFeedback.className = `typed-feedback ${result.originalResult === 'correct' ? 'accepted' : 'rejected'}`;
-    if (result.originalResult !== 'correct' && (!result.accepted || result.appealAttempted)) {
+    if (APPEALS_AVAILABLE && result.originalResult !== 'correct' && (!result.accepted || result.appealAttempted)) {
       if (!result.appealAttempted) {
         const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.dataset.appealAnswer = ''; button.textContent = 'Appeal with AI'; appealArea.append(button);
       } else {
@@ -1718,7 +1718,7 @@ deckSubjectButton.addEventListener('click', event => { event.stopImmediatePropag
 
 function evaluateTypedLocally({ expected, answer, alternatives }) {
   const local = RecallMetadata.evaluateTypedAnswer(answer, expected, alternatives);
-  return RecallAI.localResult(local);
+  return { result: local.accepted ? 'correct' : 'incorrect', score: local.accepted ? 100 : 0, feedback: local.classification === 'typo' ? 'Accepted with a small typo.' : local.accepted ? 'Accepted by local matching.' : 'Not matched by local checks.', missing_points: [], confidence: 1, source: 'local', classification: local.classification, unavailable: '' };
 }
 
 function appealTypedAnswer({ question, expected, answer, alternatives, deck, card, local }) {
@@ -1745,7 +1745,7 @@ const renderTestQuestionBeforeAI = renderTestQuestion;
 renderTestQuestion = function () {
   renderTestQuestionBeforeAI();
   const answerInput = testMode.querySelector('#testTypedInput');
-  if (answerInput) answerInput.maxLength = RecallAI.MAX_ANSWER_LENGTH;
+  if (answerInput) answerInput.maxLength = ANSWER_MAX_LENGTH;
   const feedback = state.activeTest?.feedback;
   const panel = testMode.querySelector('.test-feedback');
   if (!feedback || !panel) return;
@@ -1754,7 +1754,7 @@ renderTestQuestion = function () {
   const detail = document.createElement('span');
   detail.textContent = `Local result: ${feedback.originalResult === 'correct' ? 'Correct' : feedback.originalResult === 'partially_correct' ? 'Partially correct' : 'Not quite'}.`;
   panel.prepend(detail);
-  if (feedback.answerType === 'typed' && feedback.originalResult !== 'correct') {
+  if (APPEALS_AVAILABLE && feedback.answerType === 'typed' && feedback.originalResult !== 'correct') {
     const appealArea = document.createElement('div'); appealArea.className = 'test-appeal'; appealArea.setAttribute('aria-live', 'polite');
     if (!feedback.appealAttempted) { const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.dataset.testAppeal = ''; button.textContent = 'Appeal with AI'; appealArea.append(button); }
     else { const message = document.createElement('span'); message.textContent = appealStatusText(feedback.appeal, state.activeTest?.appealPending); appealArea.append(message); }

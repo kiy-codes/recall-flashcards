@@ -52,6 +52,20 @@ Run the Electron interaction smoke test:
 npm run test:smoke
 ```
 
+The experimental modules below have their own tests, kept out of the default run: `npm run test:experimental` (and `npm run test:smoke -- --experimental` for the admin-library smoke test).
+
+## Supported product and experimental modules
+
+The supported product is the core study loop: the Electron desktop app and the static web build, local-first storage, FSRS review, and import/export. Optional account sync and deck sharing (see Data and privacy) build on that.
+
+These parts are **experimental and off by default**. They stay in the repository but are not loaded by `index.html`, not copied into `dist-web` or packaged releases, and not part of `npm test`:
+
+- `mobile/` — the Expo mobile project.
+- Admin web library — `admin-library.js`, `admin-ai.js`, `supabase/ADMIN-LIBRARY.md` and the `admin-library` / `admin-ai` Edge Functions.
+- AI appeal layer — `ai-evaluator.js` and the `evaluate-answer` Edge Function. Without it, typed answers are graded locally and the “Appeal with AI” controls and the AI setting are hidden.
+
+To try them, add their `<script>` tags to `index.html` and their file names to `WEB_FILES` in `scripts/build.js` and `build.files` in `package.json`. Nothing is supported or release-tested for them in the default build. The sections below that describe them apply only when you do this.
+
 ## Built-in flashcard library and generator skill
 
 Open **Library → Browse pre-made decks** to search or filter starter decks, preview cards, and choose **Copy to my decks**. This makes new card/deck IDs and fresh study progress in your local collection; editing or deleting that copy never changes the version-controlled original. The library works offline in Electron and in a cached web build. The two small example decks are marked **unverified samples**, not exam-board endorsements or complete syllabus coverage; their topics were checked against the [AQA GCSE Physics Waves specification](https://www.aqa.org.uk/subjects/physics/gcse/physics-8463/specification/subject-content/waves) and [OCR A Level Biology A overview](https://www.ocr.org.uk/qualifications/as-and-alevel/biology-a-h020-h420-from-2015/specification-at-a-glance/). Three additional 50-card Edexcel International GCSE Chemistry decks cover **Gases in the Atmosphere**, **The Reactivity Series**, and **Solubility and Separation**. They follow the [Pearson Chemistry specification](https://qualifications.pearson.com/content/dam/pdf/International%20GCSE/Chemistry/2017/specification-and-sample-assessments/international-gcse-chemistry-2017-specification.pdf) topics supplied in the request, including acid rain. The third supplied section was labelled “kinetic theory,” but its listed objectives concern solubility and separation; the deck follows the listed objectives. These decks are also **unverified drafts** pending teacher review, not official Pearson material.
