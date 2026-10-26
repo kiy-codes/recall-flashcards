@@ -13,6 +13,7 @@ function mockFetch(calls, { admin = true, providerStatus = 200, providerBody = n
   return async (url, options) => {
     calls.push({ url, options });
     if (url.includes('/auth/v1/user')) return Response.json({ id: USER });
+    if (url.includes('/rest/v1/rpc/recall_take_ai_appeal')) return Response.json(1);
     if (url.includes('/recall_ai_admins')) return Response.json(admin ? [{ user_id: USER }] : []);
     if (url.includes('/recall_ai_settings')) return Response.json(options?.method === 'PATCH' ? [{ ...JSON.parse(options.body) }] : [selected]);
     if (url.includes('/recall_ai_provider_tests')) return Response.json(options?.method === 'PATCH' ? [{ provider: 'groq' }] : [{ provider: 'groq', status: 'not_tested', last_successful_test_at: null }]);

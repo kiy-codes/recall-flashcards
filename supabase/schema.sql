@@ -114,6 +114,38 @@ grant select on public.recall_ai_provider_tests to authenticated;
 drop policy if exists recall_ai_tests_admin_select on public.recall_ai_provider_tests;
 create policy recall_ai_tests_admin_select on public.recall_ai_provider_tests
   for select to authenticated using (exists (select 1 from public.recall_ai_admins where user_id = (select auth.uid())));
+
+-- Shared hourly counter for AI appeals. It is touched only by the
+-- evaluate-answer Edge Function (through recall_take_ai_appeal, below), so
+-- clients get no access at all: RLS is forced and no policy or grant exists.
+create table if not exists public.recall_ai_appeal_usage (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  window_start timestamptz not null,
+  count integer not null default 0 check (count >= 0),
+  primary key (user_id, window_start)
+);
+alter table public.recall_ai_appeal_usage enable row level security;
+alter table public.recall_ai_appeal_usage force row level security;
+revoke all on public.recall_ai_appeal_usage from public, anon, authenticated;
+
+-- One atomic statement: concurrent function instances cannot both read the
+-- same count. It returns the new count for the current hour; the caller
+-- rejects the appeal when that exceeds its limit.
+create or replace function public.recall_take_ai_appeal(p_user uuid)
+returns integer language sql volatile security definer set search_path = '' as $$
+  insert into public.recall_ai_appeal_usage as usage (user_id, window_start, count)
+  values (p_user, date_trunc('hour', clock_timestamp()), 1)
+  on conflict (user_id, window_start) do update set count = usage.count + 1
+  returning count;
+$$;
+revoke all on function public.recall_take_ai_appeal(uuid) from public, anon, authenticated;
+-- Existing local SQL harnesses do not create this Supabase-managed role.
+do $$ begin
+  if exists(select 1 from pg_roles where rolname = 'service_role') then
+    execute 'revoke all on public.recall_ai_appeal_usage from service_role';
+    execute 'grant execute on function public.recall_take_ai_appeal(uuid) to service_role';
+  end if;
+end $$;
 commit;
 
 -- Link shares are immutable snapshots of explicitly selected card content.
