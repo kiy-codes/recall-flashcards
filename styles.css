@@ -634,3 +634,4 @@ html[data-theme="dark"] .account-error { color: #ffb1b1; }
 .home-stats { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 @media (max-width: 1100px) { .home-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .daily-review-prompt { display: grid; }.daily-review-start { align-items: stretch; }.daily-review-start label:first-child { flex: 1 1 190px; }.daily-review-start label:first-child select { width: 100%; }.daily-review-start .primary-button { flex: 1 1 100%; }.home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.daily-review-page { padding-top: 36px; }.daily-review-card { min-height: 280px; padding: 25px; }.daily-rating-buttons { grid-template-columns: repeat(2, 1fr); }.daily-summary-counts { grid-template-columns: repeat(2, 1fr); } }
+.rating-help { margin: 10px 0 0; color: var(--muted); font-size: 11px; text-align: center; }

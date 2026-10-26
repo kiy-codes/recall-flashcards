@@ -11,6 +11,8 @@
   const DEFAULT_NEW_LIMIT = 20;
   const MASTERY_INTERVAL_DAYS = 7;
   const RATINGS = ['Again', 'Hard', 'Good', 'Easy'];
+  // The one place the older two-button study flow meets FSRS: Mark correct -> Good, Needs practice -> Again.
+  const LEGACY_OUTCOMES = { correct: 'Good', retry: 'Again' };
   const scheduler = FSRS.fsrs({ enable_fuzz: false, enable_short_term: true, learning_steps: ['1m', '10m'], relearning_steps: ['10m'] });
   const asDate = value => value instanceof Date ? value : new Date(value);
   const validDate = value => value && Number.isFinite(asDate(value).getTime()) ? asDate(value).toISOString() : null;
@@ -22,7 +24,12 @@
   const localDayStart = value => { const date = asDate(value); return new Date(date.getFullYear(), date.getMonth(), date.getDate()); };
   const nextLocalDayStart = value => { const date = localDayStart(value); date.setDate(date.getDate() + 1); return date; };
   const isNew = card => !card?.lastReviewedAt && nonnegative(card?.reviewCount) === 0 && (card?.state === 'New' || !card?.state);
+  // The only definition of Mastered: the last FSRS review scheduled the card at least MASTERY_INTERVAL_DAYS ahead.
   const isMastered = card => nonnegative(card?.fsrs?.scheduled_days) >= MASTERY_INTERVAL_DAYS;
+  // New / Learning / Mastered as shown in the UI and used by filters; always derived, never read from card.state.
+  const studyState = card => isNew(card) ? 'New' : isMastered(card) ? 'Mastered' : 'Learning';
+  // Maps a stored or button outcome (a rating name or a legacy 'correct'/'retry') to a rating name, or null.
+  const ratingName = outcome => RATINGS.includes(outcome) ? outcome : typeof outcome === 'string' && Object.hasOwn(LEGACY_OUTCOMES, outcome) ? LEGACY_OUTCOMES[outcome] : null;
 
   function fsrsCard(card = {}) {
     const stored = card.fsrs && typeof card.fsrs === 'object' ? card.fsrs : {};
@@ -53,8 +60,8 @@
   const isDue = (card, now = new Date()) => !validDate(card?.dueAt) || asDate(card.dueAt).getTime() <= asDate(now).getTime();
   const dueToday = (card, now = new Date()) => !isNew(card) && (!validDate(card?.dueAt) || asDate(card.dueAt).getTime() < nextLocalDayStart(now).getTime());
   function ratingValue(rating) {
-    const name = rating === 'correct' ? 'Good' : rating === 'retry' ? 'Again' : rating;
-    if (!RATINGS.includes(name)) throw new Error('Invalid review rating.');
+    const name = ratingName(rating);
+    if (!name) throw new Error('Invalid review rating.');
     return FSRS.Rating[name];
   }
   function previewRatings(card, reviewedAt = new Date()) {
@@ -83,7 +90,7 @@
   const createReviewEvent = (card, outcome, reviewedAt = new Date(), responseTimeMs = 0, deckId = null, wasNew = false) => ({
     id: `review-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     cardId: card.id, deckId, timestamp: asDate(reviewedAt).toISOString(), outcome,
-    rating: RATINGS.includes(outcome) ? outcome : outcome === 'correct' ? 'Good' : 'Again',
+    rating: ratingName(outcome) || 'Again',
     wasNew: Boolean(wasNew), responseTimeMs: Math.max(0, Number(responseTimeMs) || 0),
     schedulerVersion: card.schedulerVersion || SCHEDULER_VERSION,
   });
@@ -134,6 +141,6 @@
     return current;
   }
   return { SCHEDULER_VERSION, DEFAULT_NEW_LIMIT, MASTERY_INTERVAL_DAYS, RATINGS, localDayKey, localDayStart, nextLocalDayStart,
-    isNew, isMastered, dueToday, schedulingDefaults, getNextReview, previewRatings, formatInterval, isDue, scheduleCard,
+    isNew, isMastered, studyState, ratingName, dueToday, schedulingDefaults, getNextReview, previewRatings, formatInterval, isDue, scheduleCard,
     createReviewEvent, migrateCard, newCardsReviewedToday, buildDailyQueue, progress, streak };
 });

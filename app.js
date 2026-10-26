@@ -177,7 +177,7 @@ function load() {
       state.shuffled = saved.shuffled !== false;
       state.sessionHistory = Array.isArray(saved.sessionHistory) ? saved.sessionHistory.filter(item => Number.isFinite(item.attempts) && Number.isFinite(item.correct)) : (Array.isArray(saved.performance) ? saved.performance.filter(item => Number.isFinite(item.total) && Number.isFinite(item.correct)).map((item, index) => ({ id: `legacy-${index}`, deckId: null, deckName: 'Previous study', startedAt: `${item.date}T12:00:00`, endedAt: `${item.date}T12:00:00`, attempts: item.total, correct: item.correct, retry: Math.max(0, item.total - item.correct) })) : []);
       state.testHistory = Array.isArray(saved.testHistory) ? saved.testHistory.filter(item => Array.isArray(item.questions) && Array.isArray(item.answers)) : [];
-      state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && ['correct', 'retry', ...RecallScheduler.RATINGS].includes(item.outcome)) : [];
+      state.reviewLog = Array.isArray(saved.reviewLog) ? saved.reviewLog.filter(item => item && item.cardId && item.timestamp && RecallScheduler.ratingName(item.outcome)) : [];
       state.newCardLimit = Number.isInteger(saved.newCardLimit) && saved.newCardLimit >= 0 && saved.newCardLimit <= 100 ? saved.newCardLimit : RecallScheduler.DEFAULT_NEW_LIMIT;
       if (saved.dailyReview && Array.isArray(saved.dailyReview.queue) && Number.isInteger(saved.dailyReview.index) && saved.dailyReview.index >= 0 && saved.dailyReview.index <= saved.dailyReview.queue.length) {
         const session = saved.dailyReview;
@@ -236,8 +236,8 @@ function cardsForStudy() {
   if (state.studyFilter === 'flagged') return cards.filter(card => card.flagged);
   if (state.studyFilter === 'due') return cards.filter(card => RecallScheduler.isDue(card));
   if (state.studyFilter === 'missed') return cards.filter(card => card.missed);
-  if (state.studyFilter === 'new') return cards.filter(card => card.state === 'New');
-  if (state.studyFilter === 'learning') return cards.filter(card => card.state === 'Learning');
+  if (state.studyFilter === 'new') return cards.filter(card => RecallScheduler.studyState(card) === 'New');
+  if (state.studyFilter === 'learning') return cards.filter(card => RecallScheduler.studyState(card) === 'Learning');
   return cards;
 }
 
@@ -385,7 +385,7 @@ function renderDeck() {
     const genderChip = gender && !['unknown', 'not_applicable'].includes(gender) ? `<span class="card-tags"><i title="Grammatical gender">${escapeHtml(gender)}</i></span>` : '<span class="gender-slot" aria-hidden="true"></span>';
     const front = displayCardSide(card, 'front');
     const indicators = `${card.flagged ? '<span class="deck-flag" title="Flagged" aria-label="Flagged">&#9873;</span>' : ''}${card.hint ? '<span class="card-detail" title="Has hint" aria-label="Has hint">?</span>' : ''}${card.notes ? '<span class="card-detail" title="Has notes" aria-label="Has notes">&#9638;</span>' : ''}`;
-    item.innerHTML = `${select}<span class="side front-side" title="${escapeHtml(front)}">${escapeHtml(front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><div class="deck-card-meta">${genderChip}<span class="deck-card-state ${card.state.toLowerCase()}">${escapeHtml(card.state)}</span><span class="deck-card-indicators">${indicators}</span></div><div class="deck-card-actions"><button class="edit-card" type="button" data-edit="${escapeHtml(card.id)}">Edit</button><button class="delete-card" type="button" data-delete="${escapeHtml(card.id)}" aria-label="Delete card">&times;</button></div>`;
+    item.innerHTML = `${select}<span class="side front-side" title="${escapeHtml(front)}">${escapeHtml(front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><div class="deck-card-meta">${genderChip}<span class="deck-card-state ${RecallScheduler.studyState(card).toLowerCase()}">${RecallScheduler.studyState(card)}</span><span class="deck-card-indicators">${indicators}</span></div><div class="deck-card-actions"><button class="edit-card" type="button" data-edit="${escapeHtml(card.id)}">Edit</button><button class="delete-card" type="button" data-delete="${escapeHtml(card.id)}" aria-label="Delete card">&times;</button></div>`;
     elements.deckList.append(item);
   });
   if (!visibleDeckCards.length && activeCards().length) elements.deckList.innerHTML = '<p class="deck-no-results">No cards match your search or deck tag filters.</p>';
@@ -402,7 +402,7 @@ function renderDeck() {
   visible.forEach(card => {
     const item = document.createElement('article'); item.className = 'deck-item';
     if (state.selectingCards && state.selectedCardIds.has(card.id)) item.classList.add('selected');
-    item.innerHTML = `${state.selectingCards ? `<label class="card-check"><input type="checkbox" data-select-card="${card.id}" ${state.selectedCardIds.has(card.id) ? 'checked' : ''} aria-label="Select card" /></label>` : ''}<span class="side front-side" title="${escapeHtml(card.front)}">${escapeHtml(card.front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><span class="deck-card-state ${card.state.toLowerCase()}">${escapeHtml(card.state)}</span>${card.flagged ? '<span class="deck-flag" title="Flagged">★</span>' : ''}<span class="card-tags">${card.tags.map(tag => `<i>${escapeHtml(tag)}</i>`).join('')}</span>${card.hint ? '<span class="card-detail" title="Has hint">⌁</span>' : ''}${card.notes ? '<span class="card-detail" title="Has notes">▤</span>' : ''}<button class="edit-card" type="button" data-edit="${card.id}">Edit</button><button class="delete-card" type="button" data-delete="${card.id}" aria-label="Delete card">×</button>`;
+    item.innerHTML = `${state.selectingCards ? `<label class="card-check"><input type="checkbox" data-select-card="${card.id}" ${state.selectedCardIds.has(card.id) ? 'checked' : ''} aria-label="Select card" /></label>` : ''}<span class="side front-side" title="${escapeHtml(card.front)}">${escapeHtml(card.front)}</span><span class="side back-side" title="${escapeHtml(card.back)}">${escapeHtml(card.back)}</span><span class="deck-card-state ${RecallScheduler.studyState(card).toLowerCase()}">${RecallScheduler.studyState(card)}</span>${card.flagged ? '<span class="deck-flag" title="Flagged">★</span>' : ''}<span class="card-tags">${card.tags.map(tag => `<i>${escapeHtml(tag)}</i>`).join('')}</span>${card.hint ? '<span class="card-detail" title="Has hint">⌁</span>' : ''}${card.notes ? '<span class="card-detail" title="Has notes">▤</span>' : ''}<button class="edit-card" type="button" data-edit="${card.id}">Edit</button><button class="delete-card" type="button" data-delete="${card.id}" aria-label="Delete card">×</button>`;
     elements.deckList.append(item);
   });
   if (!visible.length && activeCards().length) elements.deckList.innerHTML = '<p class="deck-no-results">No cards match your search or tag filters.</p>';
@@ -616,9 +616,9 @@ function studyStreaks() {
 function applyCardReview(card, result) {
   const before = { state: card.state, missed: card.missed, correctStreak: card.correctStreak, reviewCount: card.reviewCount };
   card.reviewCount += 1;
-  card.missed = result === 'retry' || result === 'Again';
+  card.missed = RecallScheduler.ratingName(result) === 'Again';
   card.correctStreak = card.missed ? 0 : card.correctStreak + 1;
-  card.state = !card.missed && RecallScheduler.isMastered(card) ? 'Mastered' : 'Learning';
+  card.state = RecallScheduler.studyState(card);
   const learned = before.state !== 'Mastered' && card.state === 'Mastered';
   return { before, learned };
 }
@@ -1378,7 +1378,7 @@ function cardsForTest(config) {
   return state.sets.filter(set => deckIds.includes(set.id)).flatMap(set => set.cards.map(card => ({ ...card, deckId: set.id, deckName: set.name, folderId: set.folderId, deckTags: set.tags, subject: set.subject, domain: set.domain, language: set.language, frontLabel: sideNames(set).front, backLabel: sideNames(set).back }))).filter(card => {
     if (subset && !subset.has(card.id)) return false;
     const matchesTags = !config.tags.length || config.tags.every(tag => card.deckTags.some(deckTag => deckTag.toLocaleLowerCase() === tag.toLocaleLowerCase()));
-    const matchesFilter = config.filter === 'all' || (config.filter === 'new' && card.state === 'New') || (config.filter === 'learning' && card.state === 'Learning') || (config.filter === 'mastered' && card.state === 'Mastered') || (config.filter === 'missed' && card.missed) || (config.filter === 'flagged' && card.flagged);
+    const matchesFilter = config.filter === 'all' || (config.filter === 'new' && RecallScheduler.studyState(card) === 'New') || (config.filter === 'learning' && RecallScheduler.studyState(card) === 'Learning') || (config.filter === 'mastered' && RecallScheduler.studyState(card) === 'Mastered') || (config.filter === 'missed' && card.missed) || (config.filter === 'flagged' && card.flagged);
     return matchesTags && matchesFilter;
   });
 }
