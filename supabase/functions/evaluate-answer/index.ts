@@ -1,9 +1,7 @@
 // @ts-nocheck
 import { validateInput } from '../_shared/evaluator.ts';
 import { callProvider, DEFAULT_SELECTION, validSelection } from '../_shared/providers.ts';
-// Per-isolate throttle only; a shared durable counter would need extra storage.
-const quotas = new Map();
-const WINDOW_MS = 60 * 60 * 1000;
+// Appeals per user per hour, counted in the database so the limit holds across function instances.
 const PER_USER_LIMIT = 10;
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -42,16 +40,21 @@ function publicApiKey(value) {
   catch { return false; }
 }
 
-function takeQuota(userId, now, state) {
-  if (state.size > 5000) for (const [id, entry] of state) if (now - entry.start >= WINDOW_MS) state.delete(id);
-  let entry = state.get(userId);
-  if (!entry || now - entry.start >= WINDOW_MS) { entry = { start: now, count: 0 }; state.set(userId, entry); }
-  if (entry.count >= PER_USER_LIMIT) return false;
-  entry.count += 1;
-  return true;
+// Increments this hour's counter with a single atomic upsert (recall_take_ai_appeal in schema.sql)
+// and returns the new count. Throws when the database cannot be reached, so callers fail closed.
+async function takeAppeal(userId, { fetcher, projectUrl, serviceKey }) {
+  const response = await fetcher(`${projectUrl}/rest/v1/rpc/recall_take_ai_appeal`, {
+    method: 'POST',
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ p_user: userId }), signal: AbortSignal.timeout(2500),
+  });
+  if (!response.ok) throw new Error('Usage counter unavailable');
+  const count = await response.json();
+  if (!Number.isInteger(count) || count < 1) throw new Error('Usage counter returned an invalid count');
+  return count;
 }
 
-export async function handleRequest(request, { fetcher = fetch, env = name => Deno.env.get(name), now = () => Date.now(), rateState = quotas } = {}) {
+export async function handleRequest(request, { fetcher = fetch, env = name => Deno.env.get(name) } = {}) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
   if (!request.headers.get('content-type')?.startsWith('application/json')) return json(415, { error: 'JSON required.' });
@@ -91,7 +94,10 @@ export async function handleRequest(request, { fetcher = fetch, env = name => De
     selection = rows?.[0] || { ...DEFAULT_SELECTION, model: env('GROQ_MODEL') || DEFAULT_SELECTION.model };
     if (!validSelection(selection)) return json(503, { error: 'AI provider configuration is invalid.' });
   } catch { return json(503, { error: 'AI evaluation is unavailable.' }); }
-  if (!takeQuota(user.id, now(), rateState)) return json(429, { error: 'AI evaluation limit reached. Try later.' });
+  let used;
+  try { used = await takeAppeal(user.id, { fetcher, projectUrl, serviceKey }); }
+  catch { return json(503, { error: 'AI evaluation is unavailable.' }); }
+  if (used > PER_USER_LIMIT) return json(429, { error: `AI appeal limit reached (${PER_USER_LIMIT} per hour). Try again later.` });
   const answer = await callProvider(selection, input, { fetcher, env });
   if (answer.error) return json(answer.status, { error: answer.status === 429 ? 'AI is busy. Evaluated locally.' : 'AI evaluation is unavailable. Evaluated locally.' });
   return json(200, answer.result);

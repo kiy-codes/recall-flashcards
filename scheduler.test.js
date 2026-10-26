@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { getNextReview, previewRatings, isDue, dueToday, isNew, isMastered, scheduleCard, createReviewEvent, migrateCard, buildDailyQueue, progress, streak, newCardsReviewedToday, localDayKey, nextLocalDayStart, SCHEDULER_VERSION, MASTERY_INTERVAL_DAYS } = require('./scheduler');
+const { getNextReview, previewRatings, isDue, dueToday, isNew, isMastered, scheduleCard, createReviewEvent, migrateCard, studyState, ratingName, buildDailyQueue, progress, streak, newCardsReviewedToday, localDayKey, nextLocalDayStart, SCHEDULER_VERSION, MASTERY_INTERVAL_DAYS } = require('./scheduler');
 const at = new Date('2026-01-01T12:00:00.000Z');
 test('new cards are immediately due', () => { assert.equal(isDue({}, at), true); assert.equal(isDue(migrateCard({}), at), true); });
 test('first FSRS review previews all four ratings before choosing one', () => {
@@ -164,5 +164,35 @@ test('local day boundaries use calendar dates through daylight saving changes', 
     assert.equal(dueToday({ state: 'Mastered', reviewCount: 1, dueAt: midnight.toISOString() }, spring), false);
   } finally {
     if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
+});
+test('legacy outcomes map to FSRS ratings in one function and nothing else maps', () => {
+  assert.deepEqual(['correct', 'retry', 'Again', 'Hard', 'Good', 'Easy'].map(ratingName), ['Good', 'Again', 'Again', 'Hard', 'Good', 'Easy']);
+  for (const bad of ['', 'good', 'constructor', '__proto__', 'toString', null, undefined, 3]) assert.equal(ratingName(bad), null);
+  assert.throws(() => getNextReview({}, 'constructor', at), /Invalid review rating/);
+  assert.equal(createReviewEvent({ id: 'c' }, 'correct', at).rating, 'Good');
+  assert.equal(createReviewEvent({ id: 'c' }, 'retry', at).rating, 'Again');
+  assert.equal(createReviewEvent({ id: 'c' }, 'Easy', at).rating, 'Easy');
+  const stored = JSON.parse(JSON.stringify(createReviewEvent({ id: 'c' }, 'correct', at)));
+  assert.equal(ratingName(stored.outcome), stored.rating);
+});
+test('studyState is derived from the one Mastered rule, not from a stored state', () => {
+  const reviewed = { reviewCount: 3, lastReviewedAt: at.toISOString() };
+  assert.equal(studyState({}), 'New');
+  assert.equal(studyState({ state: 'New', reviewCount: 0 }), 'New');
+  assert.equal(studyState({ ...reviewed, state: 'Mastered', fsrs: { scheduled_days: MASTERY_INTERVAL_DAYS - 1 } }), 'Learning');
+  assert.equal(studyState({ ...reviewed, state: 'Learning', fsrs: { scheduled_days: MASTERY_INTERVAL_DAYS } }), 'Mastered');
+  assert.equal(studyState(scheduleCard({}, 'Again', at)), 'Learning');
+  const good = scheduleCard({}, 'Easy', at);
+  assert.equal(studyState(good), isMastered(good) ? 'Mastered' : 'Learning');
+});
+test('migration keeps every existing due date and review field, including cards it demotes from Mastered', () => {
+  for (const dueAt of ['2025-06-01T08:00:00.000Z', '2026-01-05T12:00:00.000Z', '2031-03-09T23:59:59.000Z']) {
+    const saved = { id: 'keep', state: 'Mastered', reviewCount: 9, correctStreak: 4, missed: false, dueAt, lastReviewedAt: '2025-12-30T09:00:00.000Z', repetitions: 6, lapses: 2 };
+    const migrated = migrateCard(JSON.parse(JSON.stringify(saved)));
+    for (const key of ['id', 'reviewCount', 'correctStreak', 'missed', 'dueAt', 'lastReviewedAt', 'repetitions', 'lapses']) assert.equal(migrated[key], saved[key], key);
+    assert.equal(migrated.state, 'Learning');
+    assert.equal(migrated.fsrs.due, dueAt);
+    assert.equal(migrateCard(migrated).dueAt, dueAt);
   }
 });

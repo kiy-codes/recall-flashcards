@@ -12,7 +12,7 @@
   dialog.setAttribute('aria-labelledby', 'deckShareTitle');
   dialog.innerHTML = `<header class="account-head"><div><p class="eyebrow">Deck sharing</p><h2 id="deckShareTitle">Share a deck</h2></div><button class="text-button" data-share-action="close" type="button">Close</button></header>
     <p class="account-help">Links contain a snapshot of card sides, deck tags and learning metadata. They never include your account details, notes, hints, due dates or study history. Recipients get an independent editable copy.</p>
-    <section id="shareOwnerSection"><h3 id="shareOwnerName"></h3><p class="account-help">A link does not update when you edit this deck. Create a new one for a new snapshot.</p><div class="account-actions"><label>Link expires<select id="shareLifetime"><option value="30">30 days</option><option value="7">7 days</option></select></label><button class="primary-button" data-share-action="create" type="button">Create private link</button></div><div id="shareCreated" hidden><label>Share code or link<input id="shareCreatedValue" type="text" readonly /></label><button class="text-button" data-share-action="copy" type="button">Copy link/code</button><p class="account-help">Keep this code now; for safety it cannot be recovered from the server later.</p></div><h3>Existing links</h3><div id="shareOwnerLinks"></div></section>
+    <section id="shareOwnerSection"><h3 id="shareOwnerName"></h3><p class="account-help share-limits" id="shareLimits"><strong>Anyone with this code can view a snapshot of this deck until it expires or you revoke it. Revoking does not remove copies people have already imported.</strong></p><p class="account-help">A link does not update when you edit this deck. Create a new one for a new snapshot.</p><div class="account-actions"><label>Link expires<select id="shareLifetime" required><option value="" selected disabled>Choose…</option><option value="1">After 1 day</option><option value="7">After 7 days</option></select></label><button class="primary-button" data-share-action="create" type="button">Create private link</button></div><div id="shareCreated" hidden><label>Share code or link<input id="shareCreatedValue" type="text" readonly /></label><button class="text-button" data-share-action="copy" type="button">Copy link/code</button><p class="account-help">Keep this code now; for safety it cannot be recovered from the server later.</p></div><h3>Existing links</h3><div id="shareOwnerLinks"></div></section>
     <section class="account-choice"><h3>Open a shared deck</h3><label>Private link or code<input id="shareCodeInput" type="text" autocomplete="off" placeholder="Paste a Recall link or code" /></label><div class="account-actions"><button class="text-button" data-share-action="preview" type="button">Preview deck</button></div><div id="sharePreview" hidden></div></section>
     <section class="account-choice"><h3>Shared with me</h3><p class="account-help">Links you preview in this browser session appear here. They are not copied into your library until you choose Copy to my library.</p><div id="shareSavedLinks"></div></section><p id="shareStatus" role="status" aria-live="polite"></p>`;
   document.body.append(dialog);
@@ -48,7 +48,7 @@
   function open(deckId = null) {
     ownerDeckId = deckId;
     preview = null; createdValue = '';
-    el('shareCodeInput').value = ''; el('shareCreated').hidden = true;
+    el('shareCodeInput').value = ''; el('shareCreated').hidden = true; el('shareLifetime').value = '';
     el('shareOwnerSection').hidden = !deckId;
     el('deckShareTitle').textContent = deckId ? 'Share a deck' : 'Shared with me';
     if (deckId) el('shareOwnerName').textContent = local.deck(deckId)?.name || 'Deck';
@@ -63,10 +63,12 @@
       if (action === 'create') {
         if (!service) throw new Error('Cloud sharing is not configured in this build. Use Export share file for offline sharing.');
         const deck = local.deck(ownerDeckId); if (!deck) throw new Error('This deck was deleted.');
-        const result = await service.create(deck, Number(el('shareLifetime').value));
+        const days = Number(el('shareLifetime').value);
+        if (![1, 7].includes(days)) throw new Error('Choose when this link expires.');
+        const result = await service.create(deck, days);
         createdValue = location.protocol === 'http:' || location.protocol === 'https:' ? `${location.origin}${location.pathname}#share=${result.token}` : result.token;
         el('shareCreatedValue').value = createdValue; el('shareCreated').hidden = false;
-        status('Private link created. Anyone with the code can preview until it expires or is revoked.');
+        status('Private link created. Anyone with the code can view the snapshot until it expires or you revoke it.');
         await renderOwnerLinks();
       } else if (action === 'copy') {
         if (!createdValue) return;
@@ -91,7 +93,7 @@
         ? 'Cloud sharing is not set up yet. Run the updated Supabase schema.sql.'
         : /fetch|network|offline|timeout|aborted/i.test(String(error?.message || ''))
           ? 'Cloud sharing is unavailable offline. Your local decks are safe.'
-          : ['Enter a valid Recall share code or link.', 'This share link is invalid, expired, revoked, or deleted. Ask the owner for a new link.', 'Sign in to create or manage deck links.', 'Cloud sharing is not configured in this build.', 'Cloud sharing is not configured in this build. Use Export share file for offline sharing.', 'This deck was deleted.', 'The code is selected. Press Ctrl+C to copy it.'].includes(error?.message)
+          : ['Enter a valid Recall share code or link.', 'This share link is invalid, expired, revoked, or deleted. Ask the owner for a new link.', 'Sign in to create or manage deck links.', 'Cloud sharing is not configured in this build.', 'Cloud sharing is not configured in this build. Use Export share file for offline sharing.', 'This deck was deleted.', 'Choose when this link expires.', 'The code is selected. Press Ctrl+C to copy it.'].includes(error?.message)
             ? error.message : 'Sharing failed. Check your connection and try again.';
       status(message, true);
     }
@@ -106,7 +108,7 @@
     const forget = event.target.closest('[data-share-forget]')?.dataset.shareForget;
     if (forget) { writeSaved(saved().filter(item => item.token !== forget)); renderSaved(); return; }
     const revoke = event.target.closest('[data-share-revoke]')?.dataset.shareRevoke;
-    if (revoke && service) { try { await service.revoke(revoke); status('Link revoked. Existing recipients can no longer preview or copy it.'); await renderOwnerLinks(); } catch { status('Could not revoke this link. Check your connection and try again.', true); } }
+    if (revoke && service) { try { await service.revoke(revoke); status('Link revoked. People who already imported the deck keep their copies.'); await renderOwnerLinks(); } catch { status('Could not revoke this link. Check your connection and try again.', true); } }
   });
   dialog.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.id === 'shareCodeInput') { event.preventDefault(); act('preview'); } });
   document.querySelector('#openDeckShareBtn').addEventListener('click', () => open(local.activeDeck()?.id));

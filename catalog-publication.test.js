@@ -62,9 +62,12 @@ test('catalogue service fails closed on admin access and account changes, but pu
 });
 test('build manifests include publication files without bundling server secrets or identity', () => {
   const {WEB_FILES} = require('./scripts/build');
-  for (const file of ['catalog-service.js','admin-library.js']) {
-    assert.ok(WEB_FILES.includes(file)); assert.ok(require('./package.json').build.files.includes(file));
-    assert.match(fs.readFileSync('index.html','utf8'),new RegExp(`src="${file}"`));
-    assert.doesNotMatch(fs.readFileSync(file,'utf8'),/SUPABASE_SERVICE_ROLE_KEY|sb_secret_|innerHTML/);
+  assert.ok(WEB_FILES.includes('catalog-service.js')); assert.ok(require('./package.json').build.files.includes('catalog-service.js'));
+  assert.match(fs.readFileSync('index.html','utf8'),/src="catalog-service.js"/);
+  assert.doesNotMatch(fs.readFileSync('catalog-service.js','utf8'),/SUPABASE_SERVICE_ROLE_KEY|sb_secret_|innerHTML/);
+  // Experimental admin/AI modules are off by default (see README); they must not ship in the default build.
+  for (const file of ['admin-library.js','admin-ai.js','ai-evaluator.js']) {
+    assert.ok(!WEB_FILES.includes(file)); assert.ok(!require('./package.json').build.files.includes(file));
+    assert.doesNotMatch(fs.readFileSync('index.html','utf8'),new RegExp(`src="${file}"`));
   }
 });

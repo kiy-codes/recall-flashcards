@@ -85,7 +85,7 @@
           <p id="dailyReviewDeck"></p><div id="dailyReviewFront" class="daily-review-front"></div>
           <div id="dailyReviewAnswer" class="daily-review-answer" hidden><span>Answer</span><p id="dailyReviewBack"></p></div>
         </div>
-        <div class="daily-review-controls"><button class="primary-button" id="revealReviewBtn" type="button">Reveal answer <kbd>Space</kbd></button><div class="daily-rating-buttons" id="dailyRatingButtons" hidden><button data-review-rating="Again" type="button">Again <small></small><kbd>1</kbd></button><button data-review-rating="Hard" type="button">Hard <small></small><kbd>2</kbd></button><button data-review-rating="Good" type="button">Good <small></small><kbd>3</kbd></button><button data-review-rating="Easy" type="button">Easy <small></small><kbd>4</kbd></button></div></div>
+        <div class="daily-review-controls"><button class="primary-button" id="revealReviewBtn" type="button">Reveal answer <kbd>Space</kbd></button><div class="daily-rating-buttons" id="dailyRatingButtons" hidden><button data-review-rating="Again" type="button">Again <small></small><kbd>1</kbd></button><button data-review-rating="Hard" type="button">Hard <small></small><kbd>2</kbd></button><button data-review-rating="Good" type="button">Good <small></small><kbd>3</kbd></button><button data-review-rating="Easy" type="button">Easy <small></small><kbd>4</kbd></button></div><p class="rating-help">Ratings set when you next see this card, using FSRS spacing.</p></div>
         <div class="daily-review-summary" id="dailyReviewSummary" hidden></div>
       </section>
 
@@ -174,6 +174,7 @@
             </button>
             <button class="undo-button" id="undoBtn" type="button" disabled><span>↶</span> Undo last answer <kbd>Z</kbd></button>
           </div>
+          <p class="rating-help">Ratings set when you next see this card, using FSRS spacing.</p>
         </div>
       </section>
 
@@ -280,7 +281,6 @@
     <script src="catalog-core.js"></script>
     <script src="catalog-service.js"></script>
     <script src="catalog-data.js"></script>
-    <script src="ai-evaluator.js"></script>
     <script src="sync-core.js"></script>
     <script src="share-core.js"></script>
     <script src="app.js"></script>
@@ -289,8 +289,6 @@
     <script src="sync-service.js"></script>
     <script src="share-service.js"></script>
     <script src="account-ui.js"></script>
-    <script src="admin-ai.js"></script>
-    <script src="admin-library.js"></script>
     <script src="share-ui.js"></script>
     <script src="web-offline.js"></script>
   </body>
